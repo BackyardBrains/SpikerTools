@@ -155,24 +155,24 @@ class Channel:
             raise Exception("Incorrect normalization type specified")
         return self
 
-fs = 44100       # sampling rate, Hz, must be integer
-duration = 1   # in seconds, may be float
-f1 = 10        # sine frequency, Hz, may be float
-f2 = 4       
-# generate samples, note conversion to float32 array
-data = (np.sin(2*np.pi*np.arange(fs*duration)*(f1)/fs)) + (np.sin(2*np.pi*np.arange(fs*duration)*(f2)/fs))
+# fs = 44100       # sampling rate, Hz, must be integer
+# duration = 1   # in seconds, may be float
+# f1 = 10        # sine frequency, Hz, may be float
+# f2 = 4       
+# # generate samples, note conversion to float32 array
+# data = (np.sin(2*np.pi*np.arange(fs*duration)*(f1)/fs)) + (np.sin(2*np.pi*np.arange(fs*duration)*(f2)/fs))
 
-chan1 = Channel(data, fs)
-plt.plot(chan1._t, data)
-chan1.filt(7, 'hp', 2)
-plt.figure()
-plt.plot(chan1._t, chan1.get_data())
+# chan1 = Channel(data, fs)
+# plt.plot(chan1._t, data)
+# chan1.filt(7, 'hp', 2)
+# plt.figure()
+# plt.plot(chan1._t, chan1.get_data())
 
-"""Session Class"""
+# """Session Class"""
 
 class Session: 
 
-    def __init__(self, datapath = "", eventspath = ""):
+    def __init__(self, datapath = "", eventspath = "y"):
         if (datapath != ""):
             self._datapath = datapath
             if (eventspath == "y"):
@@ -269,18 +269,31 @@ class Session:
       Returns ID of session. 
       The session ID is a numbe/string assigned by the user when it is set (see set_sessionID).
       '''
+      try:
+           self._sessionID
+      except AttributeError:
+          self.set_sessionID()
+
       return self._sessionID
     def get_subject(self): #subject is returned
       '''
       Returns name of subject as a string object. 
       The subject is assigned by the user when it is set (see set_subject).
       '''
+      try:
+           self._subject
+      except AttributeError:
+          self.set_subject()
       return self._subject
     def get_datetime(self): #date and time of session is returned
       '''
       Returns datetime object witht he date and time of the session. 
       The date and time is set by the user (see set_datetime).
       '''
+      try:
+           self._datetime
+      except AttributeError:
+          self.set_datetime()
       return self._datetime
     def get_samplerate(self): 
       '''
@@ -363,7 +376,7 @@ class Session:
       if construct:
           self.__init__(datapath=self._datapath, eventspath = self._eventspath)
       return self._datapath
-    def set_sessionID(self, sessionID):
+    def set_sessionID(self, sessionID = None):
       '''
       Set the Session ID for the Session object.
 
@@ -375,7 +388,7 @@ class Session:
       '''
       self._sessionID = sessionID
       return self._sessionID
-    def set_subject(self, subject):
+    def set_subject(self, subject= None):
       '''
       Set the subject number for the Session object.
 
@@ -399,12 +412,14 @@ class Session:
       the datetime set for the Session
       '''
       if auto: 
-          date = self._datapath[14:24]
-          date = date.split('-')
-          date = (int(x) for x in date)
-          time = self._datapath[25:33]
-          time = time.split(".")
-          time = (int(y) for y in time)
+          path_to_date = self._datapath
+          path_to_date = path_to_date.split('_')
+          date = path_to_date[-2]
+          date = date.split("-")
+          date = [int(x) for x in date]
+          time = path_to_date[-1]
+          time = time.split(".")[:-1]
+          time = [int(y) for y in time]
           self._datetime = datetime(year=date[0], month=date[1], day=date[2], hour=time[0], minute=time[1], second=time[2])
       else: 
           self._datetime = spec_datetime
@@ -517,6 +532,34 @@ class Session:
               
 
     # plotting functions      
+
+    # plot helper functions
+    def plot_events(self, left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset):
+        color_index = 0
+        #n_colors = len(self._events)
+        event_plots = []
+        event_labels = []
+        for event in self._events:
+            color = 'C' + str(color_index)
+            time_markers = self._events[event]
+            time_markers_interval = []
+            event_label = f"Event {event}"
+            event_labels.append(event_label)
+            for marker in time_markers: 
+                marker_samp = marker*chosen_channel_fs
+                if (left_bound <= marker_samp) and (right_bound >= marker_samp):
+                    time_markers_interval.append(marker)
+            markerlength = 10*(max_data - min_data)
+            event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
+            print("Event plotted")
+            event_plots.append(event_plot)
+            color_index = color_index + 1
+
+
+
+
+
+
     def plot_interval(self, channelindex, left_bound, right_bound, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False):
       '''
       Plot an interval of the data.
@@ -539,9 +582,10 @@ class Session:
             #print("we know")
             min_data = 0
             max_data = 0
-            event_labels=[]
+            event_labels=[" "]
             offset_index = 0
             for chanind in channelindex:
+                plt.subplot(self._nchannels,1,chanind+1)
                 chosen_channel = self._channels[chanind]
                 chosen_channel_fs = chosen_channel.get_fs()
                 left_boundsamp = left_bound*chosen_channel_fs
@@ -556,11 +600,38 @@ class Session:
                     min_data = np.min(data_axis)
                 if np.max(data_axis) > max_data:
                     max_data = np.max(data_axis)
-                plt.ylim(min_data*1.1, max_data*1.1)    
-                plt.plot(time_axis, data_axis, label = f"Channel {chanind}") 
-                print("Channel plotted") 
-                event_labels.append(f"Channel{chanind}")
-                offset_index = offset_index + 1
+                plt.ylim(min_data*1.1, max_data*1.1)
+                if events:
+                    color_index = 0
+                        #n_colors = len(self._events)
+                    event_plots = []
+                    event_labels = []
+                    for event in self._events:
+                        color = 'C' + str(color_index)
+                        time_markers = self._events[event]
+                        time_markers_interval = []
+                        event_label = f"Event {event}"
+                        event_labels.append(event_label)
+                        for marker in time_markers: 
+                            marker_samp = marker*chosen_channel_fs
+                            if (left_bound <= marker_samp) and (right_bound >= marker_samp):
+                                time_markers_interval.append(marker)
+                        markerlength = 10*(max_data - min_data)
+                        event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
+                        print("Event plotted")
+                        event_plots.append(event_plot)
+                        color_index = color_index + 1   
+                    plt.plot(time_axis, data_axis, label = f"Channel {chanind}") 
+                    print("Channel plotted") 
+                    plt.xlabel("Time(sec)")
+                    plt.ylabel("Amplitude")
+                    plt.title(f"Channel {chanind}")
+                    #event_labels.append(" ")
+                    #if events:
+                    #    self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
+                    offset_index = offset_index + 1
+            
+                
       else:       
             chosen_channel = self._channels[channelindex]
             chosen_channel_fs = chosen_channel.get_fs()
@@ -576,31 +647,17 @@ class Session:
             plt.ylim(min_data*1.1, max_data*1.1)
             plt.plot(time_axis, data_axis)
             event_labels = ['data']
+            if events:
+                self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
 
 
       plt.xlabel("Time(sec)")
       plt.ylabel("Amplitude")
+      plt.tight_layout()
       #plt.ylim(min_data*1.1, max_data*1.1)
 
-      if events:
-            color_index = 0
-            #n_colors = len(self._events)
-            event_plots = []
-            for event in self._events:
-                color = 'C' + str(color_index)
-                time_markers = self._events[event]
-                time_markers_interval = []
-                event_label = f"Event {event}"
-                event_labels.append(event_label)
-                for marker in time_markers: 
-                    marker_samp = marker*chosen_channel_fs
-                    if (left_bound <= marker_samp) and (right_bound >= marker_samp):
-                        time_markers_interval.append(marker)
-                markerlength = 10*(max_data - min_data)
-                event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
-                print("Event plotted")
-                event_plots.append(event_plot)
-                color_index = color_index + 1
+      #if events:
+       # self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
       if legends:
             plt.legend(event_labels)
       if show:
@@ -609,20 +666,29 @@ class Session:
             
         
     def plot_overview(self, offset=0, show_events=False, show_legends=False):
-        plt.figure()
-        if (self._nchannels == 1):
-            left_bnd = 0
-            right_bnd = len(self._channeldata)
-            self.plot_interval(0, left_bnd, right_bnd, events = show_events, show=False, make_fig=False, legends=show_legends)
-            
-        elif (self._nchannels > 1):
-            left_bnd = 0
-            right_bnd = len(self.get_channel(0).get_data())
-            chanindices = [i for i in range(self._nchannels)]
-            self.plot_interval(chanindices, left_bnd, right_bnd, offset = offset, events = show_events, show = False, make_fig=False, legends=show_legends)
-        plt.xlabel("Time(sec)")
-        plt.ylabel("Amplitude")
+        fig = plt.figure()
+        plt.subplot(self._nchannels+1, 1, 1)
+        session_overview = f"""
+        File Name: {self.get_datapath()}
+        Date and Time : {self.get_datetime()}
+        Sample Rate: {self.get_samplerate()}
+        Session Length (in samples): {len(self.get_channel(0).get_time())} samples
+        Session length (in seconds): {len(self.get_channel(0).get_time())/self.get_samplerate()} seconds
+        Session ID: {self.get_sessionID()}
+        Subject: {self.get_subject()}
+        """
+        plt.text(0,0,session_overview)
+        plt.axis("off")
+        chan_ind = 2
+        for chan in self._channels:
+            plt.subplot(self._nchannels+1, 1, chan_ind)
+            chan_ind = chan_ind + 1
+            plt.plot(chan.get_time(), chan.get_data(), color = chan.get_color())
+            plt.axis("off")
+        
         plt.show()
+
+        pass
 
     def pileplot(self, spec_event, lbound, rbound, spec_channel = 0, spec_color = 'k', alpha = 0.2):
         plt.figure()
@@ -796,36 +862,36 @@ class Session:
         plt.ylabel("Amplitude (dB/Hz")
         plt.show()
 
-help(Session)
+# help(Session)
 
-"""Importing Session and Plotting Overview"""
+# """Importing Session and Plotting Overview"""
 
-s1 = Session("/content/BYB_Recording_2021-06-18_16.14.32.wav", 'y')
+# s1 = Session("/content/BYB_Recording_2021-06-18_16.14.32.wav", 'y')
 
-s1.plot_overview(show_events=True,show_legends=True)
+# s1.plot_overview(show_events=True,show_legends=True)
 
-"""Normalizing"""
+# """Normalizing"""
 
-s1._normalize("scalar", 1/np.max(s1.get_channel(1).get_data()), 1)
-#s1.plot_interval(1,1,10)
-s1._normalize("scalar", 1/np.max(s1.get_channel(0).get_data()), 0)
+# s1._normalize("scalar", 1/np.max(s1.get_channel(1).get_data()), 1)
+# #s1.plot_interval(1,1,10)
+# s1._normalize("scalar", 1/np.max(s1.get_channel(0).get_data()), 0)
 
-s1.plot_overview(offset=5, show_events=True,show_legends=True)
+# s1.plot_overview(offset=5, show_events=True,show_legends=True)
 
-"""Filtering"""
+# """Filtering"""
 
-#s1._filt(cutoff=50, ftype = 'lp', filter_order = 2, channel_index = 0)
-s1._filt(cutoff=30, ftype = 'lp', filter_order = 2, channel_index = 0)
-s1.plot_overview(offset=5)
+# #s1._filt(cutoff=50, ftype = 'lp', filter_order = 2, channel_index = 0)
+# s1._filt(cutoff=30, ftype = 'lp', filter_order = 2, channel_index = 0)
+# s1.plot_overview(offset=5)
 
-'''Plotting Interval'''
+# '''Plotting Interval'''
 
-s1.plot_interval(0,1,10)
+# s1.plot_interval(0,1,10)
 
-"""Power Spectral Density"""
+# """Power Spectral Density"""
 
-s1.psd(0,)
+# s1.psd(0,)
 
-"""Spectrogram of Signal"""
+# """Spectrogram of Signal"""
 
-s1.spectrogram(0, 0, 10)
+# s1.spectrogram(0, 0, 10)

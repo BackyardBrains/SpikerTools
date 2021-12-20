@@ -567,7 +567,7 @@ class Session:
 
 
 
-    def plot_interval(self, channelindex, left_bound, right_bound, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False):
+    def plot_interval(self, channelindex, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False):
       '''
       Plot an interval of the data.
 
@@ -583,60 +583,41 @@ class Session:
       legends -- if True, shows legend of plots on figure (Boolean). Default value is False
 
       '''
+      left_bound = bounds[0]
+      right_bound = bounds[1]
       if make_fig:
             plt.figure()
       if (isinstance(channelindex, list)):
-            #print("we know")
-            min_data = 0
-            max_data = 0
-            event_labels=[" "]
-            offset_index = 0
-            for chanind in channelindex:
-                plt.subplot(self._nchannels,1,chanind+1)
-                chosen_channel = self._channels[chanind]
+          sp_ind = 1
+          for chan_ind in channelindex:
+                plt.subplot(len(channelindex), 1, sp_ind)
+                sp_ind = sp_ind + 1
+                chosen_channel = self._channels[chan_ind]
                 chosen_channel_fs = chosen_channel.get_fs()
-                left_boundsamp = left_bound*chosen_channel_fs
-                right_boundsamp = right_bound*chosen_channel_fs
+                left_bound_sample = left_bound*chosen_channel_fs
+                right_bound_sample = right_bound*chosen_channel_fs
                 full_time_axis = chosen_channel.get_time()
-                time_axis = full_time_axis[left_boundsamp: right_boundsamp]
+                time_axis = full_time_axis[left_bound_sample: right_bound_sample]
                 full_data_axis = chosen_channel.get_data()
-                data_axis = full_data_axis[left_boundsamp: right_boundsamp]
-                data_axis = list(np.asarray(data_axis) + (offset*offset_index))
-                print(len(data_axis))
-                if np.min(data_axis) < min_data:
-                    min_data = np.min(data_axis)
-                if np.max(data_axis) > max_data:
-                    max_data = np.max(data_axis)
+                data_axis = full_data_axis[left_bound_sample: right_bound_sample]
+                data_axis = list(np.asarray(data_axis) + offset)
+                min_data = np.min(data_axis)
+                max_data = np.max(data_axis)
                 plt.ylim(min_data*1.1, max_data*1.1)
+                plt.plot(time_axis, data_axis, color= self._channels[chan_ind].get_color() )
+                event_labels = [f'Channel {chan_ind}']
                 if events:
-                    color_index = 0
-                        #n_colors = len(self._events)
-                    event_plots = []
-                    event_labels = []
-                    for event in self._events:
-                        color = 'C' + str(color_index)
-                        time_markers = self._events[event]
-                        time_markers_interval = []
-                        event_label = f"Event {event}"
-                        event_labels.append(event_label)
-                        for marker in time_markers: 
-                            marker_samp = marker*chosen_channel_fs
-                            if (left_bound <= marker_samp) and (right_bound >= marker_samp):
-                                time_markers_interval.append(marker)
-                        markerlength = 10*(max_data - min_data)
-                        event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
-                        event_plots.append(event_plot)
-                        color_index = color_index + 1   
-                    plt.plot(time_axis, data_axis, label = f"Channel {chanind}") 
-                    plt.xlabel("Time(sec)")
-                    plt.ylabel("Amplitude")
-                    plt.title(f"Channel {chanind}")
-                    #event_labels.append(" ")
-                    #if events:
-                    #    self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
-                    offset_index = offset_index + 1
-            
-                
+                    labels, plots = self.plot_events(left_bound_sample, right_bound_sample, chosen_channel_fs, max_data, min_data, offset)
+                    event_labels = event_labels + labels
+                plt.xlabel("Time(sec)")
+                plt.ylabel("Amplitude")
+                plt.tight_layout()
+                if legends:
+                    plt.legend(event_labels)
+          if show:
+                plt.show()
+
+
       else:       
             chosen_channel = self._channels[channelindex]
             chosen_channel_fs = chosen_channel.get_fs()
@@ -650,25 +631,21 @@ class Session:
             min_data = np.min(data_axis)
             max_data = np.max(data_axis)
             plt.ylim(min_data*1.1, max_data*1.1)
-            plt.plot(time_axis, data_axis)
+            plt.plot(time_axis, data_axis, color= self._channels[channelindex].get_color() )
             event_labels = ['data']
             if events:
-                self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
-
-
-      plt.xlabel("Time(sec)")
-      plt.ylabel("Amplitude")
-      plt.tight_layout()
-      #plt.ylim(min_data*1.1, max_data*1.1)
-
-      #if events:
-       # self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
-      if legends:
-            plt.legend(event_labels)
-      if show:
-            plt.show()
+               labels, plots = self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
+               event_labels = event_labels + labels
+            plt.xlabel("Time(sec)")
+            plt.ylabel("Amplitude")
+            plt.tight_layout()
+            if legends:
+                plt.legend(event_labels)
+            if show:
+                plt.show()
     
-            
+      
+    
         
     def plot_overview(self, show_events=True):
         fig = plt.figure(figsize=(6,10))
@@ -737,10 +714,12 @@ class Session:
 
         pass
 
-    def pileplot(self, spec_event, lbound, rbound, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+    def pileplot(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+        lbound = bounds[0]
+        rbound = bounds[1]
         plt.figure()
         timemarkers = self._events[spec_event]
-        spec_channel_data = self.get_channel(spec_channel).get_data()
+        spec_channel_data = self._channels[spec_channel].get_data()
         time_axis = np.arange(0, lbound + rbound, (1/self._samplerate))
         for timemarker in timemarkers:
             data_axis = spec_channel_data[math.floor((timemarker - lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
@@ -749,7 +728,9 @@ class Session:
         plt.ylabel("Amplitude")
         plt.show()
     
-    def tlavgplot(self, spec_event, lbound, rbound, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2):
+    def tlavgplot(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2):
+        lbound = bounds[0]
+        rbound = bounds[1]
         plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self.get_channel(spec_channel).get_data()
@@ -767,7 +748,9 @@ class Session:
         plt.show()
         return
     
-    def joydivplot(self, spec_event, lbound, rbound, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+    def joydivplot(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+        lbound = bounds[0]
+        rbound = bounds[1]
         fig = plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self.get_channel(spec_channel).get_data()
@@ -797,7 +780,9 @@ class Session:
         return
 
 
-    def rasterplot(self, spec_channel, lbound = 0, rbound = None):
+    def rasterplot(self, spec_channel, bounds = (0, None)):
+        lbound = bounds[0]
+        rbound = bounds[1]
         chosen_channel = self._channels[spec_channel]
         chosen_channel_fs = chosen_channel.get_fs()
         lbound = lbound*chosen_channel_fs
@@ -831,7 +816,7 @@ class Session:
         plt.legend(event_labels)
         plt.show()
 
-    def mag_spectrum(self, spec_channel, lbound = 0, rbound = None):
+    def mag_spectrum(self, spec_channel, bounds=(0,None)):
         '''
         Plot the Magnitude Spectrum of the data.
 
@@ -840,6 +825,8 @@ class Session:
         lbound -- calculate the Magnitude Spectrum for data starting from lbound (float)
         rbound -- calculate the Magnitude Spectrum for data upto rbound (float) 
         '''
+        lbound = bounds[0]
+        rbound = bounds[1]
         plt.figure()
         chosen_channel = self._channels[spec_channel]
         chosen_channel_fs = chosen_channel.get_fs()
@@ -857,7 +844,7 @@ class Session:
         plt.ylabel("Amplitude of Spectrum")
         plt.show()
 
-    def spectrogram(self, spec_channel, lbound = 0, rbound = None):
+    def spectrogram(self, spec_channel, bounds = (0, None)):
         '''
         Plot the Spectrogram of the data.
 
@@ -866,6 +853,8 @@ class Session:
         lbound -- calculate spectrogram for data starting from lbound (float)
         rbound -- calculate spectrogram for data upto rbound (float) 
         '''
+        lbound = bounds[0]
+        rbound = bounds[1]
         plt.figure()
         chosen_channel = self._channels[spec_channel]
         chosen_channel_fs = chosen_channel.get_fs()
@@ -883,7 +872,7 @@ class Session:
         plt.ylabel("Amplitude")
         plt.show()
 
-    def psd(self, spec_channel, lbound = 0, rbound = None):
+    def psd(self, spec_channel, bounds = (0, None)):
         '''
         Plot the Power Spectral Density of the data.
 
@@ -892,6 +881,8 @@ class Session:
         lbound -- calculate psd for data starting from lbound (float)
         rbound -- calculate psd for data upto rbound (float) 
         '''
+        lbound = bounds[0]
+        rbound = bounds[1]
         plt.figure()
         chosen_channel = self._channels[spec_channel]
         chosen_channel_fs = chosen_channel.get_fs()

@@ -30,8 +30,7 @@ class Channel:
         self._label = label if label is not None else "channel" #channel string label set by user, default is channel 
         self._color = color if color is not None else 'k' #set by user
         self._t = np.arange(0, (len(self._data)/self._fs), (1/self._fs)) #time vector, elaborated from sample rate and duration of data
-
-        print("Channel created.")
+        self._index = 0
 
     #getter functions for channel attributes
     def get_data(self):
@@ -46,6 +45,8 @@ class Channel:
         return self._label
     def get_color(self):
         return self._color 
+    def get_index(self):
+        return self._index
     #setter functions for channel attributes
     def set_data(self, data_in):
         self._data = data_in
@@ -62,7 +63,12 @@ class Channel:
         return self._label
     def set_color (self, color_in):
         self._color = color_in
-        return self._color 
+        return self._color
+    def set_index (self, index_in):
+        self._index = index_in
+        colors = ["k", "b","g", "m", "r"]
+        self._color = colors[index_in]
+        return self._index  
     #delete functions for channel attributes
     def del_data(self):
         del self._data
@@ -194,15 +200,16 @@ class Session:
                 self._samplerate = sample_rate
                 self._channeldata = data
                 self._nchannels = np.ndim(data)
-                print(self._nchannels)
                 self._channels = []
                 if (self._nchannels == 1):
                     add_channel = Channel(data = self._channeldata, fs= self._samplerate)
+                    add_channel.set_index(0)
                     self._channels.append(add_channel)
                 else: 
                     self._channeldata = np.transpose(self._channeldata)
                     for i in range(self._nchannels): 
                         add_channel = Channel(data = self._channeldata[i], fs= self._samplerate)
+                        add_channel.set_index(i)
                         self._channels.append(add_channel) 
             except: 
                print("Incorrect filename specified.")
@@ -551,9 +558,9 @@ class Session:
                     time_markers_interval.append(marker)
             markerlength = 10*(max_data - min_data)
             event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
-            print("Event plotted")
             event_plots.append(event_plot)
             color_index = color_index + 1
+        return event_labels, event_plots
 
 
 
@@ -618,11 +625,9 @@ class Session:
                                 time_markers_interval.append(marker)
                         markerlength = 10*(max_data - min_data)
                         event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
-                        print("Event plotted")
                         event_plots.append(event_plot)
                         color_index = color_index + 1   
                     plt.plot(time_axis, data_axis, label = f"Channel {chanind}") 
-                    print("Channel plotted") 
                     plt.xlabel("Time(sec)")
                     plt.ylabel("Amplitude")
                     plt.title(f"Channel {chanind}")
@@ -665,9 +670,14 @@ class Session:
     
             
         
-    def plot_overview(self, offset=0, show_events=False, show_legends=False):
-        fig = plt.figure()
-        plt.subplot(self._nchannels+1, 1, 1)
+    def plot_overview(self, show_events=True):
+        fig = plt.figure(figsize=(6,10))
+        fig.tight_layout()
+        if show_events:
+            plot_size = self._nchannels + 3
+        else:
+            plot_size = self._nchannels + 2
+        plt.subplot(plot_size, 1, 1)
         session_overview = f"""
         File Name: {self.get_datapath()}
         Date and Time : {self.get_datetime()}
@@ -677,15 +687,52 @@ class Session:
         Session ID: {self.get_sessionID()}
         Subject: {self.get_subject()}
         """
-        plt.text(0,0,session_overview)
+        plt.text(0,0,session_overview, wrap=True, fontsize=8)
         plt.axis("off")
         chan_ind = 2
         for chan in self._channels:
-            plt.subplot(self._nchannels+1, 1, chan_ind)
+            plt.subplot(plot_size, 1, chan_ind)
             chan_ind = chan_ind + 1
             plt.plot(chan.get_time(), chan.get_data(), color = chan.get_color())
             plt.axis("off")
         
+        if show_events:
+            plt.subplot(plot_size, 1, chan_ind)
+            e_labels, e_plots = self.plot_events(0,len(self._channels[0].get_data()),self.get_samplerate(),np.max(self._channels[0].get_data()),np.min(self._channels[0].get_data()),0)
+            ax = plt.gca()
+            ax.axes.xaxis.set_visible(True)
+            ax.spines['top'].set_visible(False)
+            ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_visible(False)
+            #ax.spines['bottom'].set_visible(False)
+            #plt.legend(e_labels,bbox_to_anchor=(0, 0))
+            #plt.xlabel("Time (seconds)")
+            plt.tight_layout()
+            plt.yticks([])
+            plt.subplot(plot_size,1,chan_ind+1)
+            events_overview = """Events Overview: \n"""
+            for ev in self.get_events():
+                events_overview = events_overview + f"       Event {ev}: {self.get_events()[ev]} \n"
+            plt.text(0,0,events_overview, fontsize=8)
+            channels_overview = """Channels Overview: \n"""
+            ind = 0
+            for chan in self.get_channels():
+                channels_overview = channels_overview + f"      Channel {ind} \n      Mean: {np.mean(chan.get_data())}\n      Standard Dev: {chan.get_std()}\n"
+                ind = ind +1 
+            plt.text(0.5,0,channels_overview, fontsize=8, wrap=True)
+            plt.axis("off")
+            
+        else:
+            plt.subplot(plot_size,1,chan_ind)
+            channels_overview = """Channels Overview: \n"""
+            ind = 0
+            for chan in self.get_channels():
+                channels_overview = channels_overview + f"      Channel {ind} \n      Mean: {np.mean(chan.get_data())}\n      Standard Dev: {chan.get_std()}\n"
+                ind = ind +1 
+            plt.text(0,0,channels_overview, fontsize=8, wrap=True)
+            plt.axis("off")
+
+        plt.suptitle(f"Session: {self.get_sessionID()} Overview")
         plt.show()
 
         pass

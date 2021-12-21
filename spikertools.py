@@ -419,15 +419,18 @@ class Session:
       the datetime set for the Session
       '''
       if auto: 
-          path_to_date = self._datapath
-          path_to_date = path_to_date.split('_')
-          date = path_to_date[-2]
-          date = date.split("-")
-          date = [int(x) for x in date]
-          time = path_to_date[-1]
-          time = time.split(".")[:-1]
-          time = [int(y) for y in time]
-          self._datetime = datetime(year=date[0], month=date[1], day=date[2], hour=time[0], minute=time[1], second=time[2])
+          try: 
+            path_to_date = self._datapath
+            path_to_date = path_to_date.split('_')
+            date = path_to_date[-2]
+            date = date.split("-")
+            date = [int(x) for x in date]
+            time = path_to_date[-1]
+            time = time.split(".")[:-1]
+            time = [int(y) for y in time]
+            self._datetime = datetime(year=date[0], month=date[1], day=date[2], hour=time[0], minute=time[1], second=time[2])
+          except: 
+              self._datetime = None
       else: 
           self._datetime = spec_datetime
       return self._datetime

@@ -851,7 +851,7 @@ class Session:
         plt.ylabel("Amplitude of Spectrum")
         plt.show()
 
-    def plot_spectrogram(self, spec_channel, bounds = (0, None)):
+    def plot_spectrogram(self, spec_channel, bounds = (0, None), freq_bounds=None):
         '''
         Plot the Spectrogram of the data.
 
@@ -873,13 +873,15 @@ class Session:
         time_axis = full_time_axis[lbound: rbound]
         full_data_axis = chosen_channel.get_data()
         data_axis = full_data_axis[lbound: rbound]
-        plt.specgram(data_axis, Fs = chosen_channel_fs)
+        plt.specgram(data_axis, Fs = chosen_channel_fs, NFFT=3*chosen_channel_fs, noverlap=1*chosen_channel_fs)
+        if freq_bounds!=None:
+            plt.ylim(freq_bounds)
         plt.title("Spectrogram of the Signal")
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")
         plt.show()
 
-    def plot_psd(self, spec_channel, bounds = (0, None)):
+    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None):
         '''
         Plot the Power Spectral Density of the data.
 
@@ -905,6 +907,10 @@ class Session:
         plt.title("Power Spectral Density Plot of the Signal")
         plt.xlabel("Frequency(Hz)")
         plt.ylabel("Amplitude (dB/Hz")
+        if amp_bounds!=None:
+            plt.ylim(amp_bounds)
+        if freq_bounds!=None:
+            plt.xlim(freq_bounds)
         plt.show()
 
 # help(Session)

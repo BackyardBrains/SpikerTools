@@ -44,7 +44,7 @@ s2 = sp.Session(r"C:\Users\USER\Downloads\Copy of full_trial_ari.wav")
 
 #joydiv plot
 #s1.joydivplot("3", (2,2))
-s2.plot_joydiv("6", (-1,3),spec_channel=1)
+#s2.plot_joydiv("6", (-1,3),spec_channel=1)
 #raster plot
 #s1.rasterplot(0)
 
@@ -55,3 +55,7 @@ s2.plot_joydiv("6", (-1,3),spec_channel=1)
 #s1.plot_interval(0,(0,40))
 
 #s2.plot_overview()
+
+#s2.plot_psd(0,(20,40),(0,20))
+
+s2.plot_spectrogram(1,(0,60),(0,20))

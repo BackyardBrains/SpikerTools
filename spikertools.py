@@ -19,6 +19,8 @@ from scipy.io import wavfile
 import matplotlib.pyplot as plt
 from datetime import datetime
 import random
+import time
+
 
 """Channel Class """
 
@@ -549,8 +551,10 @@ class Session:
         #n_colors = len(self._events)
         event_plots = []
         event_labels = []
+        event_colors = []
         for event in self._events:
             color = 'C' + str(color_index)
+            event_colors.append(color)
             time_markers = self._events[event]
             time_markers_interval = []
             event_label = f"Event {event}"
@@ -563,7 +567,7 @@ class Session:
             event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
             event_plots.append(event_plot)
             color_index = color_index + 1
-        return event_labels, event_plots
+        return event_labels, event_plots, event_colors
 
 
 
@@ -656,91 +660,88 @@ class Session:
         if show_events:
             plot_size = self._nchannels + 3
         else:
-            plot_size = self._nchannels + 2
+            plot_size = self._nchannels + 1
         plt.subplot(plot_size, 1, 1)
         session_overview = f"""
         File Name: {self.get_datapath()}
         Date and Time : {self.get_datetime()}
         Sample Rate: {self.get_samplerate()}
-        Session Length (in samples): {len(self.get_channel(0).get_time())} samples
-        Session length (in seconds): {len(self.get_channel(0).get_time())/self.get_samplerate()} seconds
+        Session duration (in samples): {len(self.get_channel(0).get_time())} samples
+        Session duration (in hh:mm:ss): {time.strftime('%H:%M:%S', time.gmtime(len(self.get_channel(0).get_time())/self.get_samplerate()))} 
         Session ID: {self.get_sessionID()}
         Subject: {self.get_subject()}
         """
-        plt.text(0,0,session_overview, wrap=True, fontsize=8)
+        plt.text(0,0,session_overview, fontsize=8)
+        plt.title(f"Session Overview: {self.get_sessionID()}", fontweight='bold', loc = 'center')
+        plt.tight_layout()
         plt.axis("off")
-        chan_ind = 2
+        plot_ind = 2
+        chan_ind = 0
         for chan in self._channels:
-            plt.subplot(plot_size, 1, chan_ind)
-            chan_ind = chan_ind + 1
+            plt.subplot(plot_size, 1, plot_ind)
             plt.plot(chan.get_time(), chan.get_data(), color = chan.get_color())
+            #plt.axis("off")
+            #plt.subplot(plot_size, 1, plot_ind+1)
+            channel_overview = f"Channel {chan_ind}:  Mean: {round(np.mean(chan.get_data()), 2)} | Standard Dev: {round(chan.get_std(),2)}"
+            #plt.annotate(0,0,channel_overview, fontsize=8, wrap=True)
+            plt.title(channel_overview, loc='left')
             plt.axis("off")
-        
+            plot_ind = plot_ind + 1
+            chan_ind = chan_ind + 1
         if show_events:
-            plt.subplot(plot_size, 1, chan_ind)
-            e_labels, e_plots = self.plot_events(0,len(self._channels[0].get_data()),self.get_samplerate(),np.max(self._channels[0].get_data()),np.min(self._channels[0].get_data()),0)
+            plt.subplot(plot_size, 1, plot_ind)
+            e_labels, e_plots, e_colors = self.plot_events(0,len(self._channels[0].get_data()),self.get_samplerate(),np.max(self._channels[0].get_data()),np.min(self._channels[0].get_data()),0)
             ax = plt.gca()
-            ax.axes.xaxis.set_visible(True)
+            ax.axes.xaxis.set_visible(False)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             ax.spines['left'].set_visible(False)
-            #ax.spines['bottom'].set_visible(False)
+            ax.spines['bottom'].set_visible(False)
             #plt.legend(e_labels,bbox_to_anchor=(0, 0))
             #plt.xlabel("Time (seconds)")
+            plt.title("Events", loc = 'left')
             plt.tight_layout()
             plt.yticks([])
-            plt.subplot(plot_size,1,chan_ind+1)
-            events_overview = """Events Overview: \n"""
+            #plt.annotate()
+            plt.subplot(plot_size,1,plot_ind+1)
+            plt.title("Events Overview", loc = 'left')
+            col_index= 0
             for ev in self.get_events():
-                events_overview = events_overview + f"       Event {ev}: {self.get_events()[ev]} \n"
-            plt.text(0,0,events_overview, fontsize=8)
-            channels_overview = """Channels Overview: \n"""
-            ind = 0
-            for chan in self.get_channels():
-                channels_overview = channels_overview + f"      Channel {ind} \n      Mean: {np.mean(chan.get_data())}\n      Standard Dev: {chan.get_std()}\n"
-                ind = ind +1 
-            plt.text(0.5,0,channels_overview, fontsize=8, wrap=True)
+                markers_per_event = self.get_events()[ev]
+                inter_event_interval = np.mean([(markers_per_event[i+1]-markers_per_event[i]) for i in range(len(markers_per_event)-1)])
+                plt.text(0,0.75-((0.75/len(e_colors))*col_index),f"       Event {ev}: {round(inter_event_interval,2)} \n", color = e_colors[col_index], fontsize=8)
+                col_index=col_index+1 
             plt.axis("off")
             
-        else:
-            plt.subplot(plot_size,1,chan_ind)
-            channels_overview = """Channels Overview: \n"""
-            ind = 0
-            for chan in self.get_channels():
-                channels_overview = channels_overview + f"      Channel {ind} \n      Mean: {np.mean(chan.get_data())}\n      Standard Dev: {chan.get_std()}\n"
-                ind = ind +1 
-            plt.text(0,0,channels_overview, fontsize=8, wrap=True)
-            plt.axis("off")
-
-        plt.suptitle(f"Session: {self.get_sessionID()} Overview")
+        plt.tight_layout()
         plt.show()
 
         pass
 
-    def pileplot(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+    def plot_eltraces(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
         lbound = bounds[0]
         rbound = bounds[1]
         plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self._channels[spec_channel].get_data()
-        time_axis = np.arange(0, lbound + rbound, (1/self._samplerate))
+        time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
         for timemarker in timemarkers:
-            data_axis = spec_channel_data[math.floor((timemarker - lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
+            data_axis = spec_channel_data[math.floor((timemarker + lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
             plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")
         plt.show()
     
-    def tlavgplot(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2):
+    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2):
         lbound = bounds[0]
         rbound = bounds[1]
         plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self.get_channel(spec_channel).get_data()
-        time_axis = np.arange(0, lbound + rbound, (1/self._samplerate))
+        time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
         avg_data = []
         for timemarker in timemarkers:
-            data_axis = spec_channel_data[math.floor((timemarker - lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
+            data_axis = spec_channel_data[math.floor((timemarker + lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
             if showtraces:
                 plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
             avg_data.append(data_axis)
@@ -751,18 +752,18 @@ class Session:
         plt.show()
         return
     
-    def joydivplot(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+    def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
         lbound = bounds[0]
         rbound = bounds[1]
         fig = plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self.get_channel(spec_channel).get_data()
-        time_axis = np.arange(0, lbound + rbound, (1/self._samplerate))
+        time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
         plot_index = 1
         ylim_top =  np.max(spec_channel_data)
         ylim_bottom = np.min(spec_channel_data)
         for timemarker in timemarkers:
-            data_axis = spec_channel_data[math.floor((timemarker - lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
+            data_axis = spec_channel_data[math.floor((timemarker + lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
             plt.subplot(len(timemarkers),1,plot_index)
             plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
             plt.ylabel("Amplitude")
@@ -771,19 +772,22 @@ class Session:
             ax.axes.xaxis.set_visible(False)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
+            ax.spines['left'].set_visible(False)
             ax.spines['bottom'].set_visible(False)
             ax.set_ylim(ylim_bottom, ylim_top)
+            ax.axes.yaxis.set_visible(False)
             if plot_index == len(timemarkers):
                 ax.axes.xaxis.set_visible(True)
                 ax.spines['bottom'].set_visible(True)
             plot_index = plot_index + 1
         fig.supxlabel('Time')
         fig.supylabel('Traces')
+        fig.tight_layout()
         plt.show()
         return
 
 
-    def rasterplot(self, spec_channel, bounds = (0, None)):
+    def plot_raster(self, spec_channel, bounds = (0, None)):
         lbound = bounds[0]
         rbound = bounds[1]
         chosen_channel = self._channels[spec_channel]
@@ -819,7 +823,7 @@ class Session:
         plt.legend(event_labels)
         plt.show()
 
-    def mag_spectrum(self, spec_channel, bounds=(0,None)):
+    def plot_mag_spectrum(self, spec_channel, bounds=(0,None)):
         '''
         Plot the Magnitude Spectrum of the data.
 
@@ -847,7 +851,7 @@ class Session:
         plt.ylabel("Amplitude of Spectrum")
         plt.show()
 
-    def spectrogram(self, spec_channel, bounds = (0, None)):
+    def plot_spectrogram(self, spec_channel, bounds = (0, None)):
         '''
         Plot the Spectrogram of the data.
 
@@ -875,7 +879,7 @@ class Session:
         plt.ylabel("Amplitude")
         plt.show()
 
-    def psd(self, spec_channel, bounds = (0, None)):
+    def plot_psd(self, spec_channel, bounds = (0, None)):
         '''
         Plot the Power Spectral Density of the data.
 

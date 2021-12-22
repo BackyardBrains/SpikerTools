@@ -4,11 +4,13 @@ import matplotlib.pyplot as plt
 #importing session
 s1 = sp.Session(r"C:\Users\USER\Documents\BYB\BYB_Recording_2021-06-18_16.14.32.wav")
 
+s2 = sp.Session(r"C:\Users\USER\Downloads\Copy of full_trial_ari.wav")
+
 #plot overview without events
 #s1.plot_overview(show_events=False)
 
 #plot overview with events
-#s1.plot_overview()
+#s2.plot_overview()
 
 
 #plot interval (one channel) without events or legend
@@ -35,14 +37,14 @@ s1 = sp.Session(r"C:\Users\USER\Documents\BYB\BYB_Recording_2021-06-18_16.14.32.
 #s1.pileplot("3", (2,2))
 
 #time locked average plot without traces
-#s1.tlavgplot("3", (2,2))
+#1.tlavgplot("3", (2,2))
 
 #time locked average plot with traces
 #s1.tlavgplot("3", (2,2), showtraces= True)
 
 #joydiv plot
 #s1.joydivplot("3", (2,2))
-
+s2.plot_joydiv("6", (-1,3),spec_channel=1)
 #raster plot
 #s1.rasterplot(0)
 
@@ -51,3 +53,5 @@ s1 = sp.Session(r"C:\Users\USER\Documents\BYB\BYB_Recording_2021-06-18_16.14.32.
 
 #s1.get_channel(0).set_color("r")
 #s1.plot_interval(0,(0,40))
+
+#s2.plot_overview()

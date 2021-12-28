@@ -1002,6 +1002,18 @@ class Session:
         fig.tight_layout()
         plt.show()
                     
-
+class Sessions:
+    def __init__(self, sessions):
+        self._sessions = sessions
+    
+    def plot_overview(self, show_events=True):
+        for sesh in self._sessions:
+            sesh.plot_overview(show_events)
+    
+    def plot_interval(self, channelindex, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False):
+        for sesh in self._sessions:
+            sesh.plot_interval(channelindex, bounds, offset, events, event_marker_factor, show, make_fig, legends)
+        
+    
         
         

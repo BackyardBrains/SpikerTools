@@ -40,7 +40,7 @@ s2 = sp.Session(r"C:\Users\USER\Downloads\Copy of full_trial_ari.wav")
 #1.tlavgplot("3", (2,2))
 
 #time locked average plot with traces
-#s1.tlavgplot("3", (2,2), showtraces= True)
+s2.plot_elavg("1", (-2,2), showtraces= True)
 
 #joydiv plot
 #s1.joydivplot("3", (2,2))
@@ -58,4 +58,4 @@ s2 = sp.Session(r"C:\Users\USER\Downloads\Copy of full_trial_ari.wav")
 
 #s2.plot_psd(0,(20,40),(0,20))
 
-s2.plot_spectrogram(1,(0,60),(0,20))
+#s2.plot_spectrogram(1,(0,60),(0,20))

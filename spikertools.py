@@ -20,6 +20,9 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import random
 import time
+from matplotlib.ticker import MaxNLocator
+from pydub import AudioSegment
+from tinytag import TinyTag
 
 
 """Channel Class """
@@ -183,13 +186,14 @@ class Session:
     def __init__(self, datapath = "", eventspath = "y"):
         if (datapath != ""):
             self._datapath = datapath
-            if (eventspath == "y"):
-                self._eventspath = datapath[:-4] + '-events.txt' 
-            elif (eventspath != ""):
-                self._eventspath = eventspath
-            else:
-                self._eventspath = None
-                print("No event file specified")
+            if datapath.endswith(".wav") or datapath.endswith(".m4a"):
+                if (eventspath == "y"):
+                    self._eventspath = datapath[:-4] + '-events.txt' 
+                elif (eventspath != ""):
+                    self._eventspath = eventspath
+                else:
+                    self._eventspath = None
+                    print("No event file specified")
         else:
             self._datapath = None
             self._eventspath = None 
@@ -198,21 +202,42 @@ class Session:
         #reading data from file
         if (self._datapath != None):
             try:
-                sample_rate, data = wavfile.read(self._datapath)
-                self._samplerate = sample_rate
-                self._channeldata = data
-                self._nchannels = np.ndim(data)
-                self._channels = []
-                if (self._nchannels == 1):
-                    add_channel = Channel(data = self._channeldata, fs= self._samplerate)
-                    add_channel.set_index(0)
-                    self._channels.append(add_channel)
-                else: 
-                    self._channeldata = np.transpose(self._channeldata)
-                    for i in range(self._nchannels): 
-                        add_channel = Channel(data = self._channeldata[i], fs= self._samplerate)
-                        add_channel.set_index(i)
-                        self._channels.append(add_channel) 
+                if datapath.endswith(".wav"):
+                    sample_rate, data = wavfile.read(self._datapath)
+                    self._samplerate = sample_rate
+                    self._channeldata = data
+                    self._nchannels = np.ndim(data)
+                    self._channels = []
+                    if (self._nchannels == 1):
+                        add_channel = Channel(data = self._channeldata, fs= self._samplerate)
+                        add_channel.set_index(0)
+                        self._channels.append(add_channel)
+                    else: 
+                        self._channeldata = np.transpose(self._channeldata)
+                        for i in range(self._nchannels): 
+                            add_channel = Channel(data = self._channeldata[i], fs= self._samplerate)
+                            add_channel.set_index(i)
+                            self._channels.append(add_channel) 
+                elif datapath.endswith(".m4a"):
+                    tag = TinyTag.get(datapath)
+                    print("done this")
+                    sample_rate = tag.samplerate
+                    data = AudioSegment.from_file(datapath, "m4a")
+                    print("done that")
+                    self._samplerate = sample_rate
+                    self._channeldata = data
+                    self._nchannels = np.ndim(data)
+                    self._channels = []
+                    if (self._nchannels == 1):
+                        add_channel = Channel(data = self._channeldata, fs= self._samplerate)
+                        add_channel.set_index(0)
+                        self._channels.append(add_channel)
+                    else: 
+                        self._channeldata = np.transpose(self._channeldata)
+                        for i in range(self._nchannels): 
+                            add_channel = Channel(data = self._channeldata[i], fs= self._samplerate)
+                            add_channel.set_index(i)
+                            self._channels.append(add_channel) 
             except: 
                print("Incorrect filename specified.")
         if (self._eventspath != None):
@@ -709,7 +734,7 @@ class Session:
             for ev in self.get_events():
                 markers_per_event = self.get_events()[ev]
                 inter_event_interval = np.mean([(markers_per_event[i+1]-markers_per_event[i]) for i in range(len(markers_per_event)-1)])
-                plt.text(0,0.75-((0.75/len(e_colors))*col_index),f"       Event {ev}: {round(inter_event_interval,2)} \n", color = e_colors[col_index], fontsize=8)
+                plt.text(0,0.75-((0.75/len(e_colors))*col_index),f"       Event {ev} (n = {len(markers_per_event)}): Avg. Inter-Event Interval = {round(inter_event_interval,2)} \n", color = e_colors[col_index], fontsize=8)
                 col_index=col_index+1 
             plt.axis("off")
             
@@ -727,29 +752,48 @@ class Session:
         time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
         for timemarker in timemarkers:
             data_axis = spec_channel_data[math.floor((timemarker + lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
-            plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
+            if len(data_axis) != len(time_axis):
+                pass
+            else:
+                plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")
         plt.show()
     
-    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2):
+    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True):
         lbound = bounds[0]
         rbound = bounds[1]
-        plt.figure()
+        if makefig:
+            plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self.get_channel(spec_channel).get_data()
+        #spec_channel_data = list(spec_channel_data)
         time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
+        #time_axis = list(time_axis)
         avg_data = []
         for timemarker in timemarkers:
-            data_axis = spec_channel_data[math.floor((timemarker + lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
-            if showtraces:
-                plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
-            avg_data.append(data_axis)
-        avg_trace = np.mean(avg_data, axis = 0)
-        plt.plot(time_axis, avg_trace, color = 'r')
+            data_axis = spec_channel_data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
+            if len(data_axis) != len(time_axis):
+                pass
+            else:
+                avg_data.append(data_axis)
+                if showtraces:
+                    plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
+            
+        avg_trace = np.mean(avg_data, axis=0)
+        #print(f"Len Avg Trace: {len(avg_trace)}")
+        #print(f"Len time: {len(time_axis)}")
+        if len(avg_trace) > len(time_axis):
+            avg_trace=avg_trace[0:len(time_axis)-1]
+            print("this")
+        if len(avg_trace) < len(time_axis):
+            time_axis = time_axis[0:len(avg_trace)-1]
+            print("that")
+        plt.plot(time_axis, avg_trace, color = self.get_channel(spec_channel).get_color())
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")
-        plt.show()
+        if show:
+            plt.show()
         return
     
     def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
@@ -763,7 +807,7 @@ class Session:
         ylim_top =  np.max(spec_channel_data)
         ylim_bottom = np.min(spec_channel_data)
         for timemarker in timemarkers:
-            data_axis = spec_channel_data[math.floor((timemarker + lbound)*self._samplerate): math.floor((timemarker + rbound)*self._samplerate)]
+            data_axis = spec_channel_data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
             plt.subplot(len(timemarkers),1,plot_index)
             plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
             plt.ylabel("Amplitude")
@@ -851,7 +895,7 @@ class Session:
         plt.ylabel("Amplitude of Spectrum")
         plt.show()
 
-    def plot_spectrogram(self, spec_channel, bounds = (0, None), freq_bounds=None):
+    def plot_spectrogram(self, spec_channel, freq_res = 1, bounds = (0, None), freq_bounds=None, amp_bounds = None):
         '''
         Plot the Spectrogram of the data.
 
@@ -873,15 +917,20 @@ class Session:
         time_axis = full_time_axis[lbound: rbound]
         full_data_axis = chosen_channel.get_data()
         data_axis = full_data_axis[lbound: rbound]
-        plt.specgram(data_axis, Fs = chosen_channel_fs, NFFT=3*chosen_channel_fs, noverlap=1*chosen_channel_fs)
+        nfft = math.floor(chosen_channel_fs/freq_res) 
+        n_overlap = math.floor(nfft/2)
+        if amp_bounds != None:
+            vmin = amp_bounds[0]
+            vmax = amp_bounds[1]
+        plt.specgram(data_axis, Fs = chosen_channel_fs, NFFT=nfft, noverlap=n_overlap, vmin=vmin, vmax=vmax)
         if freq_bounds!=None:
             plt.ylim(freq_bounds)
         plt.title("Spectrogram of the Signal")
         plt.xlabel("Time(sec)")
-        plt.ylabel("Amplitude")
+        plt.ylabel("Frequency")
         plt.show()
 
-    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None):
+    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1):
         '''
         Plot the Power Spectral Density of the data.
 
@@ -903,46 +952,56 @@ class Session:
         time_axis = full_time_axis[lbound: rbound]
         full_data_axis = chosen_channel.get_data()
         data_axis = full_data_axis[lbound: rbound]
-        plt.psd(data_axis, Fs = chosen_channel_fs)
+        nfft = math.floor(chosen_channel_fs/freq_res) 
+        n_overlap = math.floor(nfft/2)
+        plt.psd(data_axis, Fs = chosen_channel_fs, NFFT = nfft, noverlap=n_overlap)
         plt.title("Power Spectral Density Plot of the Signal")
         plt.xlabel("Frequency(Hz)")
-        plt.ylabel("Amplitude (dB/Hz")
+        plt.ylabel("Amplitude (dB/Hz)")
         if amp_bounds!=None:
             plt.ylim(amp_bounds)
         if freq_bounds!=None:
             plt.xlim(freq_bounds)
         plt.show()
+    
+    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins):
+        fig = plt.figure()
+        num_trials = len(self._events[onset_event])
+        trials = self._events[onset_event]
+        spikes = self._events[spike_event]
+        left_bound = bounds[0]
+        right_bound = bounds[1]
+        trial_index = 1
+        all_spikes = []
+        plt.subplot(2,1,2)
+        for trial in trials:
+            #print("TRIAL")
+            spikes_per_event =  []
+            for spike in spikes:
+                if (spike >= trial + left_bound) and (spike <= trial + right_bound):
+                    #print(spike)
+                    spikes_per_event.append(spike)
+            trial_axis = [trial_index]*len(spikes_per_event)
 
-# help(Session)
+            spikes_per_event_adj = [spp - trial for spp in spikes_per_event]
+            all_spikes = all_spikes + spikes_per_event_adj
+            plt.scatter(spikes_per_event_adj, trial_axis, color = "k", marker = "|")
+            trial_index = trial_index + 1
+        plt.xlim([bounds[0], bounds[1]]) 
+        plt.axvline(0, color = "r")
+        plt.xlabel("Interval (seconds)")   
+        plt.ylabel("Trials")
+        plt.title("Raster")
 
-# """Importing Session and Plotting Overview"""
+        plt.subplot(2,1,1)
+        plt.title("Peri-Event Time Histogram")
+        plt.hist(all_spikes, bins = nbins, range = bounds)
+        plt.ylabel("Count")
+        plt.axvline(0, color = "r")
+        
+        fig.tight_layout()
+        plt.show()
+                    
 
-# s1 = Session("/content/BYB_Recording_2021-06-18_16.14.32.wav", 'y')
-
-# s1.plot_overview(show_events=True,show_legends=True)
-
-# """Normalizing"""
-
-# s1._normalize("scalar", 1/np.max(s1.get_channel(1).get_data()), 1)
-# #s1.plot_interval(1,1,10)
-# s1._normalize("scalar", 1/np.max(s1.get_channel(0).get_data()), 0)
-
-# s1.plot_overview(offset=5, show_events=True,show_legends=True)
-
-# """Filtering"""
-
-# #s1._filt(cutoff=50, ftype = 'lp', filter_order = 2, channel_index = 0)
-# s1._filt(cutoff=30, ftype = 'lp', filter_order = 2, channel_index = 0)
-# s1.plot_overview(offset=5)
-
-# '''Plotting Interval'''
-
-# s1.plot_interval(0,1,10)
-
-# """Power Spectral Density"""
-
-# s1.psd(0,)
-
-# """Spectrogram of Signal"""
-
-# s1.spectrogram(0, 0, 10)
+        
+        

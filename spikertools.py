@@ -1014,6 +1014,38 @@ class Sessions:
         for sesh in self._sessions:
             sesh.plot_interval(channelindex, bounds, offset, events, event_marker_factor, show, make_fig, legends)
         
+    def plot_eltraces(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+        for sesh in self._sessions:
+            sesh.plot_eltraces(spec_event, bounds, spec_channel, spec_color, alpha)
     
+    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True):
+        for sesh in self._sessions:
+            sesh.plot_elavg(spec_event, bounds, spec_channel, spec_color, showtraces, alpha, show, makefig)
+    
+    def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+        for sesh in self.sessions:
+            sesh.plot_joydiv(spec_event, bounds, spec_channel, spec_color, alpha)
+    
+    def plot_raster(self, spec_channel, bounds = (0, None)):
+        for sesh in self._sessions:
+            sesh.plot_interval(spec_channel, bounds)
+    
+    def plot_mag_spectrum(self, spec_channel, bounds=(0,None)):
+        for sesh in self._sessions:
+            sesh.plot_mag_spectrum(spec_channel, bounds)
+
+    def plot_spectrogram(self, spec_channel, freq_res = 1, bounds = (0, None), freq_bounds=None, amp_bounds = None):
+        for sesh in self._sessions:
+            sesh.plot_spectrogram(spec_channel, freq_res, bounds, freq_bounds, amp_bounds)
+
+    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1):
+        for sesh in self._sessions:
+            sesh.plot_psd(spec_channel, bounds, freq_bounds, amp_bounds, freq_res)
+
+    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins):
+        for sesh in self._sessions:
+            sesh.plot_peth(spec_channel, bounds, onset_event, spike_event, nbins)
+    
+
         
         

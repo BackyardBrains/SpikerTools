@@ -21,8 +21,8 @@ from datetime import datetime
 import random
 import time
 from matplotlib.ticker import MaxNLocator
-from pydub import AudioSegment
-from tinytag import TinyTag
+#from pydub import AudioSegment
+#from tinytag import TinyTag
 
 
 """Channel Class """
@@ -639,7 +639,7 @@ class Session:
                 plt.plot(time_axis, data_axis, color= self._channels[chan_ind].get_color() )
                 event_labels = [f'Channel {chan_ind}']
                 if events:
-                    labels, plots = self.plot_events(left_bound_sample, right_bound_sample, chosen_channel_fs, max_data, min_data, offset)
+                    labels, plots, colors = self.plot_events(left_bound_sample, right_bound_sample, chosen_channel_fs, max_data, min_data, offset)
                     event_labels = event_labels + labels
                 plt.xlabel("Time(sec)")
                 plt.ylabel("Amplitude")
@@ -666,7 +666,7 @@ class Session:
             plt.plot(time_axis, data_axis, color= self._channels[channelindex].get_color() )
             event_labels = ['data']
             if events:
-               labels, plots = self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
+               labels, plots, colors = self.plot_events(left_bound, right_bound, chosen_channel_fs, max_data, min_data, offset)
                event_labels = event_labels + labels
             plt.xlabel("Time(sec)")
             plt.ylabel("Amplitude")
@@ -930,7 +930,7 @@ class Session:
         plt.ylabel("Frequency")
         plt.show()
 
-    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1):
+    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, show=True, makefig=True):
         '''
         Plot the Power Spectral Density of the data.
 
@@ -1006,46 +1006,50 @@ class Sessions:
     def __init__(self, sessions):
         self._sessions = sessions
     
-    def plot_overview(self, show_events=True):
-        for sesh in self._sessions:
-            sesh.plot_overview(show_events)
+    def plot_interval(self, channel, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False, join = True):
+        if make_fig:
+            fig = plt.figure()
+        if join:
+            for sesh in self._sessions:
+                sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=False)
+            if legends:
+                plt.legend([sesh.get_sessionID() for sesh in self._sessions])
+            if show:
+                plt.show()
+        else:
+            n_sessions = len(self._sessions)
+            sesh_ind = 1
+            for sesh in self._sessions:
+                plt.subplot(n_sessions,1, sesh_ind)
+                sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=legends)
+                sesh_ind = sesh_ind + 1
+                plt.title(sesh.get_sessionID())
+            if show:
+                plt.tight_layout()
+                plt.show()
     
-    def plot_interval(self, channelindex, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False):
-        for sesh in self._sessions:
-            sesh.plot_interval(channelindex, bounds, offset, events, event_marker_factor, show, make_fig, legends)
-        
-    def plot_eltraces(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
-        for sesh in self._sessions:
-            sesh.plot_eltraces(spec_event, bounds, spec_channel, spec_color, alpha)
+    def plot_psd(self, channel, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False, join = True):
+        if make_fig:
+            fig = plt.figure()
+        if join:
+            for sesh in self._sessions:
+                sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=False)
+            if legends:
+                plt.legend([sesh.get_sessionID() for sesh in self._sessions])
+            if show:
+                plt.show()
+        else:
+            n_sessions = len(self._sessions)
+            sesh_ind = 1
+            for sesh in self._sessions:
+                plt.subplot(n_sessions,1, sesh_ind)
+                sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=legends)
+                sesh_ind = sesh_ind + 1
+                plt.title(sesh.get_sessionID())
+            if show:
+                plt.tight_layout()
+                plt.show()
     
-    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True):
-        for sesh in self._sessions:
-            sesh.plot_elavg(spec_event, bounds, spec_channel, spec_color, showtraces, alpha, show, makefig)
     
-    def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
-        for sesh in self.sessions:
-            sesh.plot_joydiv(spec_event, bounds, spec_channel, spec_color, alpha)
-    
-    def plot_raster(self, spec_channel, bounds = (0, None)):
-        for sesh in self._sessions:
-            sesh.plot_interval(spec_channel, bounds)
-    
-    def plot_mag_spectrum(self, spec_channel, bounds=(0,None)):
-        for sesh in self._sessions:
-            sesh.plot_mag_spectrum(spec_channel, bounds)
-
-    def plot_spectrogram(self, spec_channel, freq_res = 1, bounds = (0, None), freq_bounds=None, amp_bounds = None):
-        for sesh in self._sessions:
-            sesh.plot_spectrogram(spec_channel, freq_res, bounds, freq_bounds, amp_bounds)
-
-    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1):
-        for sesh in self._sessions:
-            sesh.plot_psd(spec_channel, bounds, freq_bounds, amp_bounds, freq_res)
-
-    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins):
-        for sesh in self._sessions:
-            sesh.plot_peth(spec_channel, bounds, onset_event, spike_event, nbins)
-    
-
         
         

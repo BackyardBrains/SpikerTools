@@ -895,7 +895,7 @@ class Session:
         plt.ylabel("Amplitude of Spectrum")
         plt.show()
 
-    def plot_spectrogram(self, spec_channel, freq_res = 1, bounds = (0, None), freq_bounds=None, amp_bounds = None):
+    def plot_spectrogram(self, spec_channel, freq_res = 1, time_res=0.5, bounds = (0, None), freq_bounds=None, amp_bounds = None):
         '''
         Plot the Spectrogram of the data.
 
@@ -918,7 +918,7 @@ class Session:
         full_data_axis = chosen_channel.get_data()
         data_axis = full_data_axis[lbound: rbound]
         nfft = math.floor(chosen_channel_fs/freq_res) 
-        n_overlap = math.floor(nfft/2)
+        n_overlap = nfft - time_res*chosen_channel_fs 
         if amp_bounds != None:
             vmin = amp_bounds[0]
             vmax = amp_bounds[1]
@@ -930,7 +930,7 @@ class Session:
         plt.ylabel("Frequency")
         plt.show()
 
-    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, show=True, makefig=True):
+    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, time_res=0.5, show=True, makefig=True):
         '''
         Plot the Power Spectral Density of the data.
 
@@ -941,7 +941,8 @@ class Session:
         '''
         lbound = bounds[0]
         rbound = bounds[1]
-        plt.figure()
+        if makefig:
+            plt.figure()
         chosen_channel = self._channels[spec_channel]
         chosen_channel_fs = chosen_channel.get_fs()
         lbound = lbound*chosen_channel_fs
@@ -953,7 +954,7 @@ class Session:
         full_data_axis = chosen_channel.get_data()
         data_axis = full_data_axis[lbound: rbound]
         nfft = math.floor(chosen_channel_fs/freq_res) 
-        n_overlap = math.floor(nfft/2)
+        n_overlap = nfft - time_res*chosen_channel_fs 
         plt.psd(data_axis, Fs = chosen_channel_fs, NFFT = nfft, noverlap=n_overlap)
         plt.title("Power Spectral Density Plot of the Signal")
         plt.xlabel("Frequency(Hz)")
@@ -962,7 +963,8 @@ class Session:
             plt.ylim(amp_bounds)
         if freq_bounds!=None:
             plt.xlim(freq_bounds)
-        plt.show()
+        if show:
+            plt.show()
     
     def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins):
         fig = plt.figure()
@@ -1028,14 +1030,13 @@ class Sessions:
                 plt.tight_layout()
                 plt.show()
     
-    def plot_psd(self, channel, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False, join = True):
-        if make_fig:
+    def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, time_res=0.5, show=True, makefig=True, join = True):
+        if makefig:
             fig = plt.figure()
         if join:
             for sesh in self._sessions:
-                sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=False)
-            if legends:
-                plt.legend([sesh.get_sessionID() for sesh in self._sessions])
+                sesh.plot_psd(spec_channel, bounds = bounds, freq_bounds=freq_bounds, amp_bounds=amp_bounds, freq_res =freq_res, time_res=time_res, show=False, makefig=False)
+            plt.legend([sesh.get_sessionID() for sesh in self._sessions])
             if show:
                 plt.show()
         else:
@@ -1043,12 +1044,63 @@ class Sessions:
             sesh_ind = 1
             for sesh in self._sessions:
                 plt.subplot(n_sessions,1, sesh_ind)
-                sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=legends)
+                sesh.plot_psd(spec_channel, bounds = bounds, freq_bounds=freq_bounds, amp_bounds=amp_bounds, freq_res =freq_res, time_res=time_res, show=False, makefig=False)
                 sesh_ind = sesh_ind + 1
                 plt.title(sesh.get_sessionID())
             if show:
                 plt.tight_layout()
                 plt.show()
+    
+    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins):
+        fig = plt.figure()
+        nsessions = len(self._sessions)
+        sesh_index = 2
+        all_spikes_sessions = []
+        for sesh in self._sessions:
+            num_trials = len(sesh._events[onset_event])
+            trials = sesh._events[onset_event]
+            spikes = sesh._events[spike_event]
+            left_bound = bounds[0]
+            right_bound = bounds[1]
+            trial_index = 1
+            all_spikes = []
+            plt.subplot(1+nsessions,1, sesh_index)
+            for trial in trials:
+            #print("TRIAL")
+                spikes_per_event =  []
+                for spike in spikes:
+                    if (spike >= trial + left_bound) and (spike <= trial + right_bound):
+                    #print(spike)
+                        spikes_per_event.append(spike)
+                trial_axis = [trial_index]*len(spikes_per_event)
+
+                spikes_per_event_adj = [spp - trial for spp in spikes_per_event]
+                all_spikes = all_spikes + spikes_per_event_adj
+                plt.scatter(spikes_per_event_adj, trial_axis, color = "k", marker = "|")
+                trial_index = trial_index + 1
+            plt.xlim([bounds[0], bounds[1]]) 
+            plt.axvline(0, color = "r")
+            plt.xlabel("Interval (seconds)")   
+            plt.ylabel("Trials")
+            plt.title(f"Raster {sesh.get_sessionID()}")
+            sesh_index = sesh_index + 1
+            all_spikes_sessions.append(all_spikes)
+
+        plt.subplot(1+nsessions,1,1)
+        plt.title("Peri-Event Time Histogram")
+        for sesh_iter in range(len(self._sessions)):
+            plt.hist(all_spikes_sessions[sesh_iter], bins = nbins, range = bounds, alpha=0.5)
+        plt.ylabel("Count")
+        plt.legend([sesh.get_sessionID() for sesh in self._sessions])
+        plt.axvline(0, color = "r")
+        
+        fig.tight_layout()
+        plt.show()
+
+    
+
+        pass
+        
     
     
         

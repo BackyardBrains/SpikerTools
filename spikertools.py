@@ -922,6 +922,9 @@ class Session:
         if amp_bounds != None:
             vmin = amp_bounds[0]
             vmax = amp_bounds[1]
+        else:
+            vmin = None
+            vmax = None
         plt.specgram(data_axis, Fs = chosen_channel_fs, NFFT=nfft, noverlap=n_overlap, vmin=vmin, vmax=vmax)
         if freq_bounds!=None:
             plt.ylim(freq_bounds)

@@ -497,6 +497,10 @@ class Session:
       '''
       self._events = events
       return self._events
+    
+    def rename_event(self, old_event, new_event):
+        self._events[new_event]=self._events.pop(old_event)
+        
     def _filt (self, cutoff, ftype, filter_order = 2, channel_index = None):
       '''
       Filter the channel data in the Session object inplace.

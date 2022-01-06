@@ -241,21 +241,24 @@ class Session:
             except: 
                print("Incorrect filename specified.")
         if (self._eventspath != None):
-            with open(self._eventspath) as event_file:
-                timestamps = event_file.readlines()
-                timestamps = timestamps[2:]
-                events = {}
-                for timestamp in timestamps:
-                    event = timestamp[0]
-                    if event not in events:
-                        events[event] = [float(timestamp.split(',')[1])]
-                    elif event in events:
-                        temp = events[event]
-                        to_add = timestamp.split(',')
-                        to_add = float(to_add[1])
-                        temp.append(to_add)
-                        events[event] = temp
-            self._events = events 
+            try: 
+                with open(self._eventspath) as event_file:
+                    timestamps = event_file.readlines()
+                    timestamps = timestamps[2:]
+                    events = {}
+                    for timestamp in timestamps:
+                        event = timestamp[0]
+                        if event not in events:
+                            events[event] = [float(timestamp.split(',')[1])]
+                        elif event in events:
+                            temp = events[event]
+                            to_add = timestamp.split(',')
+                            to_add = float(to_add[1])
+                            temp.append(to_add)
+                            events[event] = temp
+                self._events = events 
+            except: 
+                print("This event file doesn't exist in your working directory.")
 
     #getter object for Session class
     def get_nchannels(self): #returns number of channels

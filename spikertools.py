@@ -616,7 +616,7 @@ class Session:
             for i in range(num_mc_epochs):
                 cur_size_mc_onsets = len(these_mc_onsets)
                 while cur_size_mc_onsets == len(these_mc_onsets):
-                    this_random = (len(channel_data)*random())/self._samplerate
+                    this_random = (len(channel_data)*random.random())/self._samplerate
                     if this_random not in these_mc_onsets:
                         if (this_random>pre_onset) and (this_random <((len(channel_data)/self._samplerate)-post_onset)):
                             these_mc_onsets.append(this_random)

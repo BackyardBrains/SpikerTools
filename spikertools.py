@@ -493,7 +493,7 @@ class Session:
       Set the events for the Session object.
 
       Keyword Arguments:
-      events -- the events to attatch to the Session object (list: obj)
+      events -- the events to attatch to the Session object (dict: obj)
 
       Return:
       the events set for the Session object

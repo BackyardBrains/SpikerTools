@@ -786,10 +786,11 @@ class Session:
 
         pass
 
-    def plot_eltraces(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+    def plot_eltraces(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig = True, monte_carlo=False):
         lbound = bounds[0]
         rbound = bounds[1]
-        plt.figure()
+        if makefig:
+            plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self._channels[spec_channel].get_data()
         time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
@@ -801,7 +802,15 @@ class Session:
                 plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")
-        plt.show()
+        if monte_carlo:
+            mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(spec_channel=spec_channel, onset_event=spec_event,pre_onset=-lbound,post_onset=rbound)
+            plt.plot(time_axis, mc_avg, color = "blue", linewidth = 2)
+            plt.plot(time_axis, mc_plus, color = "blue")
+            plt.plot(time_axis, mc_minus, color = "blue")
+            plt.fill_between(time_axis, mc_minus,mc_plus,color="blue", alpha=0.2)
+        
+        if show:
+            plt.show()
     
     def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
         lbound = bounds[0]

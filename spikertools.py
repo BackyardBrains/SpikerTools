@@ -601,6 +601,42 @@ class Session:
             color_index = color_index + 1
         return event_labels, event_plots, event_colors
 
+    def monte_carlo_avg(self, spec_channel, onset_event, pre_onset, post_onset):
+        channel = self._channels[spec_channel]
+        channel_data = channel.get_data() 
+        onsets = self._events[onset_event]
+        num_mc_epochs = len(onsets)
+        num_mc_sim = 100
+
+        window_size_samples = (pre_onset + post_onset)*self._samplerate
+        mc_avgs = np.zeros((num_mc_sim,window_size_samples))
+        
+        for sim in range(num_mc_sim):
+            these_mc_onsets = []
+            for i in range(num_mc_epochs):
+                cur_size_mc_onsets = len(these_mc_onsets)
+                while cur_size_mc_onsets == len(these_mc_onsets):
+                    this_random = (len(channel_data)*random())/self._samplerate
+                    if this_random not in these_mc_onsets:
+                        if (this_random>pre_onset) and (this_random <((len(channel_data)/self._samplerate)-post_onset)):
+                            these_mc_onsets.append(this_random)
+        
+            these_epochs_data_mc = []
+            for p in range(len(these_mc_onsets)):
+                onset_timestamp = these_mc_onsets[p]
+                sel_start_samp = (onset_timestamp - pre_onset)*self._samplerate
+                this_epoch_data_mc = channel_data[sel_start_samp:(sel_start_samp + window_size_samples)]
+                these_epochs_data_mc.append(this_epoch_data_mc)
+        
+            avg_raw_epoch_mc = np.mean(these_epochs_data_mc, axis=0)
+            mc_avgs[sim,:] = avg_raw_epoch_mc
+        avg_raw_epoch_mc = np.mean(mc_avgs,0)
+        mc_std = np.std(mc_avgs,0)
+        mc_avg_epoch = avg_raw_epoch_mc
+        mc_plus_epoch = avg_raw_epoch_mc + (2*mc_std)
+        mc_minus_epoch = avg_raw_epoch_mc - (2*mc_std)
+        
+        return mc_avg_epoch, mc_plus_epoch, mc_minus_epoch
 
 
 
@@ -767,7 +803,7 @@ class Session:
         plt.ylabel("Amplitude")
         plt.show()
     
-    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True):
+    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
         lbound = bounds[0]
         rbound = bounds[1]
         if makefig:
@@ -799,6 +835,11 @@ class Session:
         plt.plot(time_axis, avg_trace, color = self.get_channel(spec_channel).get_color())
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")
+        if monte_carlo:
+            mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(spec_channel=spec_channel, onset_event=spec_event,pre_onset=-lbound,post_onset=rbound)
+            plt.plot(time_axis, mc_avg)
+            plt.plot(time_axis, mc_plus)
+            plt.plot(time_axis, mc_minus)
         if show:
             plt.show()
         return

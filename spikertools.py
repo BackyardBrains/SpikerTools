@@ -608,7 +608,7 @@ class Session:
         num_mc_epochs = len(onsets)
         num_mc_sim = 100
 
-        window_size_samples = (pre_onset + post_onset)*self._samplerate
+        window_size_samples = int((pre_onset + post_onset)*self._samplerate)
         mc_avgs = np.zeros((num_mc_sim,window_size_samples))
         
         for sim in range(num_mc_sim):
@@ -624,7 +624,7 @@ class Session:
             these_epochs_data_mc = []
             for p in range(len(these_mc_onsets)):
                 onset_timestamp = these_mc_onsets[p]
-                sel_start_samp = (onset_timestamp - pre_onset)*self._samplerate
+                sel_start_samp = int((onset_timestamp - pre_onset)*self._samplerate)
                 this_epoch_data_mc = channel_data[sel_start_samp:(sel_start_samp + window_size_samples)]
                 these_epochs_data_mc.append(this_epoch_data_mc)
         

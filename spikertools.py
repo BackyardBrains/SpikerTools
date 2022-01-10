@@ -837,9 +837,10 @@ class Session:
         plt.ylabel("Amplitude")
         if monte_carlo:
             mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(spec_channel=spec_channel, onset_event=spec_event,pre_onset=-lbound,post_onset=rbound)
-            plt.plot(time_axis, mc_avg)
-            plt.plot(time_axis, mc_plus)
-            plt.plot(time_axis, mc_minus)
+            plt.plot(time_axis, mc_avg, color = "blue", linewidth = 2)
+            plt.plot(time_axis, mc_plus, color = "blue")
+            plt.plot(time_axis, mc_minus, color = "blue")
+            plt.fill_between(time_axis, mc_minus,mc_plus,color="blue", alpha=0.2)
         if show:
             plt.show()
         return

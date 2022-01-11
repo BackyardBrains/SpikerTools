@@ -953,7 +953,7 @@ class Session:
         plt.ylabel("Amplitude of Spectrum")
         plt.show()
 
-    def plot_spectrogram(self, spec_channel, freq_res = 1, time_res=0.5, bounds = (0, None), freq_bounds=None, amp_bounds = None):
+    def plot_spectrogram(self, spec_channel, freq_res = 1, time_res=0.5, bounds = (0, None), freq_bounds=None, amp_bounds = None, makefig=True, show=True):
         '''
         Plot the Spectrogram of the data.
 
@@ -964,7 +964,8 @@ class Session:
         '''
         lbound = bounds[0]
         rbound = bounds[1]
-        plt.figure()
+        if makefig:
+            plt.figure()
         chosen_channel = self._channels[spec_channel]
         chosen_channel_fs = chosen_channel.get_fs()
         lbound = lbound*chosen_channel_fs
@@ -989,7 +990,8 @@ class Session:
         plt.title("Spectrogram of the Signal")
         plt.xlabel("Time(sec)")
         plt.ylabel("Frequency")
-        plt.show()
+        if show:
+            plt.show()
 
     def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, time_res=0.5, show=True, makefig=True):
         '''
@@ -1158,8 +1160,19 @@ class Sessions:
         fig.tight_layout()
         plt.show()
 
-    
-
+    def plot_spectrogram(self, spec_channel, freq_res = 1, time_res=0.5, bounds = (0, None), freq_bounds=None, amp_bounds = None, makefig=True, show=True):
+        n_sessions = len(self._sessions)
+        sesh_ind = 1
+        if makefig:
+            plt.figure()
+        for sesh in self._sessions:
+            plt.subplot(n_sessions,1, sesh_ind)
+            sesh.plot_spectrogram(spec_channel, freq_res = freq_res, time_res= time_res, bounds = bounds, freq_bounds= freq_bounds, amp_bounds = amp_bounds, makefig=False, show=False)
+            sesh_ind = sesh_ind + 1
+            plt.title(sesh.get_sessionID())
+        if show:
+            plt.tight_layout()
+            plt.show()
         pass
         
     

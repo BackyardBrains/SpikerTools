@@ -854,10 +854,11 @@ class Session:
             plt.show()
         return
     
-    def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2):
+    def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig=True):
         lbound = bounds[0]
         rbound = bounds[1]
-        fig = plt.figure()
+        if makefig:
+            fig = plt.figure()
         timemarkers = self._events[spec_event]
         spec_channel_data = self.get_channel(spec_channel).get_data()
         time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
@@ -885,7 +886,8 @@ class Session:
         fig.supxlabel('Time')
         fig.supylabel('Traces')
         fig.tight_layout()
-        plt.show()
+        if show:
+            plt.show()
         return
 
 
@@ -1170,10 +1172,56 @@ class Sessions:
             sesh.plot_spectrogram(spec_channel, freq_res = freq_res, time_res= time_res, bounds = bounds, freq_bounds= freq_bounds, amp_bounds = amp_bounds, makefig=False, show=False)
             sesh_ind = sesh_ind + 1
             plt.title(sesh.get_sessionID())
+        plt.tight_layout()
         if show:
-            plt.tight_layout()
+            plt.show()
+    
+    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
+        n_sessions = len(self._sessions)
+        sesh_ind = 1
+        if makefig:
+            plt.figure()
+        for sesh in self._sessions:
+            plt.subplot(n_sessions,1, sesh_ind)
+            sesh.plot_elavg(spec_event, bounds, spec_channel = spec_channel, spec_color = spec_color, showtraces = showtraces, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
+            sesh_ind = sesh_ind + 1
+            plt.title(sesh.get_sessionID())
+        plt.tight_layout()
+        if show:
+            plt.show()
+
+    def plot_eltraces(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig = True, monte_carlo=False):
+        n_sessions = len(self._sessions)
+        sesh_ind = 1
+        if makefig:
+            plt.figure()
+        for sesh in self._sessions:
+            plt.subplot(n_sessions,1, sesh_ind)
+            sesh.plot_eltraces(spec_event, bounds, spec_channel = spec_channel, spec_color = spec_color, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
+            sesh_ind = sesh_ind + 1
+            plt.title(sesh.get_sessionID())
+        plt.tight_layout()
+        if show:
+            plt.show()
+        
+    def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig=True):
+        n_sessions = len(self._sessions)
+        sesh_ind = 1
+        if makefig:
+            plt.figure()
+        for sesh in self._sessions:
+            plt.subplot(n_sessions,1, sesh_ind)
+            sesh.plot_joydiv(spec_event, bounds , spec_channel = spec_channel, spec_color = spec_color, alpha = alpha, show=False, makefig=False)
+            sesh_ind = sesh_ind + 1
+            plt.title(sesh.get_sessionID())
+        plt.tight_layout()
+        if show:
             plt.show()
         pass
+    
+    def 
+    
+        
         
     
     

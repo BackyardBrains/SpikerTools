@@ -722,8 +722,8 @@ class Session:
       
     
         
-    def plot_overview(self, show_events=True):
-        fig = plt.figure(figsize=(6,10))
+    def plot_overview(self, show_events=True, figsize = (6,10)):
+        fig = plt.figure(figsize=figsize)
         fig.tight_layout()
         if show_events:
             plot_size = self._nchannels + 3

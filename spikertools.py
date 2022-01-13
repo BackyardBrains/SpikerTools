@@ -584,6 +584,9 @@ class Session:
         event_plots = []
         event_labels = []
         event_colors = []
+        main_events = self._events
+        main_events["start_end"] = [0, len(self._get_channel(0).get_data())]
+        self._events = main_events
         for event in self._events:
             color = 'C' + str(color_index)
             event_colors.append(color)
@@ -596,9 +599,6 @@ class Session:
                 if (left_bound <= marker_samp) and (right_bound >= marker_samp):
                     time_markers_interval.append(marker)
             markerlength = 10*(max_data - min_data)
-            if (color_index == (len(self._events) -1)):
-                time_markers_interval = [0] + time_markers_interval
-                time_markers_interval.append(len(self.get_channel(0).get_data()))
             event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
             event_plots.append(event_plot)
             color_index = color_index + 1

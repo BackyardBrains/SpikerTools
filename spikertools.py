@@ -585,7 +585,7 @@ class Session:
         event_labels = []
         event_colors = []
         main_events = self._events
-        main_events["start_end"] = [0, len(self._get_channel(0).get_data())]
+        main_events["start_end"] = [0, len(self.get_channel(0).get_data())]
         self._events = main_events
         for event in self._events:
             color = 'C' + str(color_index)

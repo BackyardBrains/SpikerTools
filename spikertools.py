@@ -597,7 +597,7 @@ class Session:
                     time_markers_interval.append(marker)
             markerlength = 10*(max_data - min_data)
             if (color_index == (len(self._events) -1)):
-                time_markers_interval.insert(0,0)
+                time_markers_interval = [0] + time_markers_interval
                 time_markers_interval.append(len(self.get_channel(0).get_data()))
             event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
             event_plots.append(event_plot)

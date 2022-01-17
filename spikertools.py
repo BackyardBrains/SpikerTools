@@ -1047,43 +1047,90 @@ class Session:
         if show:
             plt.show()
     
-    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins):
-        fig = plt.figure()
-        num_trials = len(self._events[onset_event])
-        trials = self._events[onset_event]
-        spikes = self._events[spike_event]
-        left_bound = bounds[0]
-        right_bound = bounds[1]
-        trial_index = 1
-        all_spikes = []
-        plt.subplot(2,1,2)
-        for trial in trials:
-            #print("TRIAL")
-            spikes_per_event =  []
-            for spike in spikes:
-                if (spike >= trial + left_bound) and (spike <= trial + right_bound):
-                    #print(spike)
-                    spikes_per_event.append(spike)
-            trial_axis = [trial_index]*len(spikes_per_event)
+    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins, figsize = None):
+        if isinstance(onset_event, list):
+            fig = plt.figure(figsize=figsize)
+            n_onset_events = len(onset_event)
+            ons_index = 2
+            all_spikes_onsets = []
+            for onset in onset_event:
+                num_trials = len(self._events[onset])
+                trials = self._events[onset]
+                spikes = self._events[spike_event]
+                left_bound = bounds[0]
+                right_bound = bounds[1]
+                trial_index = 1
+                all_spikes = []
+                plt.subplot(1+n_onset_events,1, ons_index)
+                for trial in trials:
+                #print("TRIAL")
+                    spikes_per_event =  []
+                    for spike in spikes:
+                        if (spike >= trial + left_bound) and (spike <= trial + right_bound):
+                        #print(spike)
+                            spikes_per_event.append(spike)
+                    trial_axis = [trial_index]*len(spikes_per_event)
 
-            spikes_per_event_adj = [spp - trial for spp in spikes_per_event]
-            all_spikes = all_spikes + spikes_per_event_adj
-            plt.scatter(spikes_per_event_adj, trial_axis, color = "k", marker = "|")
-            trial_index = trial_index + 1
-        plt.xlim([bounds[0], bounds[1]]) 
-        plt.axvline(0, color = "r")
-        plt.xlabel("Interval (seconds)")   
-        plt.ylabel("Trials")
-        plt.title("Raster")
+                    spikes_per_event_adj = [spp - trial for spp in spikes_per_event]
+                    all_spikes = all_spikes + spikes_per_event_adj
+                    plt.scatter(spikes_per_event_adj, trial_axis, color = "k", marker = "|")
+                    trial_index = trial_index + 1
+                plt.xlim([bounds[0], bounds[1]]) 
+                plt.axvline(0, color = "r")
+                plt.xlabel("Interval (seconds)")   
+                plt.ylabel("Trials")
+                plt.title(f"Raster {self.get_sessionID()}")
+                ons_index = ons_index + 1
+                all_spikes_onsets.append(all_spikes)
 
-        plt.subplot(2,1,1)
-        plt.title("Peri-Event Time Histogram")
-        plt.hist(all_spikes, bins = nbins, range = bounds)
-        plt.ylabel("Count")
-        plt.axvline(0, color = "r")
-        
-        fig.tight_layout()
-        plt.show()
+            plt.subplot(1+n_onset_events,1,1)
+            plt.title("Peri-Event Time Histogram")
+            for ons_iter in range(len(self._sessions)):
+                plt.hist(all_spikes_onsets[ons_iter], bins = nbins, range = bounds, alpha=0.5)
+            plt.ylabel("Count")
+            plt.legend(onset_event)
+            plt.axvline(0, color = "r")
+            
+            fig.tight_layout()
+            plt.show()
+            pass
+        else:
+            fig = plt.figure(figsize=figsize)
+            num_trials = len(self._events[onset_event])
+            trials = self._events[onset_event]
+            spikes = self._events[spike_event]
+            left_bound = bounds[0]
+            right_bound = bounds[1]
+            trial_index = 1
+            all_spikes = []
+            plt.subplot(2,1,2)
+            for trial in trials:
+                #print("TRIAL")
+                spikes_per_event =  []
+                for spike in spikes:
+                    if (spike >= trial + left_bound) and (spike <= trial + right_bound):
+                        #print(spike)
+                        spikes_per_event.append(spike)
+                trial_axis = [trial_index]*len(spikes_per_event)
+
+                spikes_per_event_adj = [spp - trial for spp in spikes_per_event]
+                all_spikes = all_spikes + spikes_per_event_adj
+                plt.scatter(spikes_per_event_adj, trial_axis, color = "k", marker = "|")
+                trial_index = trial_index + 1
+            plt.xlim([bounds[0], bounds[1]]) 
+            plt.axvline(0, color = "r")
+            plt.xlabel("Interval (seconds)")   
+            plt.ylabel("Trials")
+            plt.title("Raster")
+
+            plt.subplot(2,1,1)
+            plt.title("Peri-Event Time Histogram")
+            plt.hist(all_spikes, bins = nbins, range = bounds)
+            plt.ylabel("Count")
+            plt.axvline(0, color = "r")
+            
+            fig.tight_layout()
+            plt.show()
                     
 class Sessions:
     def __init__(self, sessions):
@@ -1132,8 +1179,8 @@ class Sessions:
                 plt.tight_layout()
                 plt.show()
     
-    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins):
-        fig = plt.figure()
+    def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins, figsize = None):
+        fig = plt.figure(figsize=figsize)
         nsessions = len(self._sessions)
         sesh_index = 2
         all_spikes_sessions = []

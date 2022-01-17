@@ -762,6 +762,11 @@ class Session:
             plt.axis("off")
             plot_ind = plot_ind + 1
             chan_ind = chan_ind + 1
+            if not show_events:
+                ax = plt.gca()
+                bar = AnchoredSizeBar(ax.transData, 1, '1 second', 4)
+                ax.add_artist(bar)
+                ax.axis('off')
         if show_events:
             plt.subplot(plot_size, 1, plot_ind)
             e_labels, e_plots, e_colors = self.plot_events(0,len(self._channels[0].get_data()),self.get_samplerate(),np.max(self._channels[0].get_data()),np.min(self._channels[0].get_data()),0)
@@ -776,6 +781,10 @@ class Session:
             plt.title("Events", loc = 'left')
             plt.tight_layout()
             plt.yticks([])
+            ax = plt.gca()
+            bar = AnchoredSizeBar(ax.transData, 1, '1 second', 4)
+            ax.add_artist(bar)
+            ax.axis('off')
             #plt.annotate()
             plt.subplot(plot_size,1,plot_ind+1)
             plt.title("Events Overview", loc = 'left')
@@ -787,10 +796,7 @@ class Session:
                 col_index=col_index+1 
             plt.axis("off")
 
-        ax = plt.gca()
-        bar = AnchoredSizeBar(ax.transData, 1, '1 second', 4)
-        ax.add_artist(bar)
-        ax.axis('off')
+        
         plt.tight_layout()
         plt.show()
 

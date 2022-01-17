@@ -755,6 +755,7 @@ class Session:
         for chan in self._channels:
             plt.subplot(plot_size, 1, plot_ind)
             plt.plot(chan.get_time(), chan.get_data(), color = chan.get_color())
+            plt.xlim(0, chan.get_time()[-1])
             #plt.axis("off")
             #plt.subplot(plot_size, 1, plot_ind+1)
             channel_overview = f"Channel {chan_ind}:  Mean: {round(np.mean(chan.get_data()), 2)} | Standard Dev: {round(chan.get_std(),2)}"

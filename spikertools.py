@@ -764,7 +764,7 @@ class Session:
             chan_ind = chan_ind + 1
             if not show_events:
                 ax = plt.gca()
-                bar = AnchoredSizeBar(ax.transData, 1, '1 second', 4)
+                bar = AnchoredSizeBar(ax.transData, 1, '1 s', 4)
                 ax.add_artist(bar)
                 ax.axis('off')
         if show_events:
@@ -782,7 +782,7 @@ class Session:
             plt.tight_layout()
             plt.yticks([])
             ax = plt.gca()
-            bar = AnchoredSizeBar(ax.transData, 1, '1 second', 4)
+            bar = AnchoredSizeBar(ax.transData, 1, '1 s', 4)
             ax.add_artist(bar)
             ax.axis('off')
             #plt.annotate()

@@ -1073,7 +1073,7 @@ class Session:
 
                     spikes_per_event_adj = [spp - trial for spp in spikes_per_event]
                     all_spikes = all_spikes + spikes_per_event_adj
-                    plt.scatter(spikes_per_event_adj, trial_axis, color = f"C{ons_index-1}", marker = "|")
+                    plt.scatter(spikes_per_event_adj, trial_axis, color = f"C{ons_index-2}", marker = "|")
                     trial_index = trial_index + 1
                 plt.xlim([bounds[0], bounds[1]]) 
                 plt.axvline(0, color = "r")
@@ -1086,7 +1086,7 @@ class Session:
             plt.subplot(1+n_onset_events,1,1)
             plt.title("Peri-Event Time Histogram")
             for ons_iter in range(len(onset_event)):
-                plt.hist(all_spikes_onsets[ons_iter], bins = nbins, range = bounds, histtype=u'step', alpha=0.5)
+                plt.hist(all_spikes_onsets[ons_iter], bins = nbins, range = bounds, histtype=u'step')
             plt.ylabel("Count")
             plt.legend(onset_event)
             plt.axvline(0, color = "r")

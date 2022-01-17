@@ -599,7 +599,9 @@ class Session:
                 if (left_bound <= marker_samp) and (right_bound >= marker_samp):
                     time_markers_interval.append(marker)
             markerlength = 10*(max_data - min_data)
-            event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
+            y = [0.5]*len(time_markers_interval)
+            event_plot = plt.scatter(time_markers_interval, y, c = color)
+            #event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
             event_plots.append(event_plot)
             color_index = color_index + 1
         return event_labels, event_plots, event_colors

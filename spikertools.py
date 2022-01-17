@@ -1125,10 +1125,10 @@ class Session:
 
             plt.subplot(2,1,1)
             plt.title("Peri-Event Time Histogram")
-            plt.hist(all_spikes, bins = nbins, range = bounds)
+            plt.hist(all_spikes, bins = nbins, range = bounds, histtype=u"step")
             plt.ylabel("Count")
             plt.axvline(0, color = "r")
-            
+
             fig.tight_layout()
             plt.show()
                     
@@ -1216,7 +1216,7 @@ class Sessions:
         plt.subplot(1+nsessions,1,1)
         plt.title("Peri-Event Time Histogram")
         for sesh_iter in range(len(self._sessions)):
-            plt.hist(all_spikes_sessions[sesh_iter], bins = nbins, range = bounds, alpha=0.5)
+            plt.hist(all_spikes_sessions[sesh_iter], bins = nbins, range = bounds, histtype=u"step")
         plt.ylabel("Count")
         plt.legend([sesh.get_sessionID() for sesh in self._sessions])
         plt.axvline(0, color = "r")

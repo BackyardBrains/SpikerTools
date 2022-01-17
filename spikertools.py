@@ -1085,7 +1085,7 @@ class Session:
 
             plt.subplot(1+n_onset_events,1,1)
             plt.title("Peri-Event Time Histogram")
-            for ons_iter in range(len(self._sessions)):
+            for ons_iter in range(len(onset_event)):
                 plt.hist(all_spikes_onsets[ons_iter], bins = nbins, range = bounds, alpha=0.5)
             plt.ylabel("Count")
             plt.legend(onset_event)

@@ -1079,7 +1079,7 @@ class Session:
                 plt.axvline(0, color = "r")
                 plt.xlabel("Interval (seconds)")   
                 plt.ylabel("Trials")
-                plt.title(f"Raster {self.get_sessionID()}")
+                plt.title(f"Raster for {onset}")
                 ons_index = ons_index + 1
                 all_spikes_onsets.append(all_spikes)
 

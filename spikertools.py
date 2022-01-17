@@ -786,8 +786,9 @@ class Session:
                 plt.text(0,0.75-((0.75/len(e_colors))*col_index),f"       Event {ev} (n = {len(markers_per_event)}): Avg. Inter-Event Interval = {round(inter_event_interval,2)} \n", color = e_colors[col_index], fontsize=8)
                 col_index=col_index+1 
             plt.axis("off")
-        
-        bar = AnchoredSizeBar(plt.transData, 1, '1 second', 4)
+            
+        ax = plt.gca()
+        bar = AnchoredSizeBar(ax.transData, 1, '1 second', 4)
         plt.add_artist(bar)
         plt.tight_layout()
         plt.show()

@@ -599,6 +599,7 @@ class Session:
             markerlength = 10*(max_data - min_data)
             y = [0.5*(color_index/(len(self._events)))+0.25]*len(time_markers_interval)
             event_plot = plt.scatter(time_markers_interval, y, c = color, marker = "|")
+            plt.ylim((0,1))
             #event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
             time_axis_lim= self.get_channel(0).get_time()[-1]
             plt.xlim(0,time_axis_lim)

@@ -829,6 +829,7 @@ class Session:
         if show:
             plt.show()
     
+    #Original ETA
     def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
         lbound = bounds[0]
         rbound = bounds[1]
@@ -863,6 +864,61 @@ class Session:
         plt.ylabel("Amplitude")
         if monte_carlo:
             mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(spec_channel=spec_channel, onset_event=spec_event,pre_onset=-lbound,post_onset=rbound)
+            plt.plot(time_axis, mc_avg, color = "blue", linewidth = 2)
+            plt.plot(time_axis, mc_plus, color = "blue")
+            plt.plot(time_axis, mc_minus, color = "blue")
+            plt.fill_between(time_axis, mc_minus,mc_plus,color="blue", alpha=0.2)
+        if show:
+            plt.show()
+        return
+    
+    #Event Triggered Average
+    def plot_eta(self, events, bounds, channel = 0, color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False, ax=None):
+        lbound = bounds[0]
+        rbound = bounds[1]
+        if np.isscalar(events):
+            events = [events]
+        if np.isscalar(color):
+            color = [color]
+        if makefig:
+            plt.figure()
+        n = 0
+        for event in events:    
+            timemarkers = self._events[event]
+            spec_channel_data = self.get_channel(channel).get_data()
+            #spec_channel_data = list(spec_channel_data)
+            time_axis = np.arange(lbound, rbound, (1/self._samplerate))
+            #time_axis = list(time_axis)
+            avg_data = []
+            for timemarker in timemarkers:
+                data_axis = spec_channel_data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
+                if len(data_axis) != len(time_axis):
+                    print("Uneven Row")
+                    pass
+                else:
+                    avg_data.append(data_axis)
+                    if showtraces:
+                        plt.plot(time_axis, data_axis, color = color, alpha = alpha)
+                
+            avg_trace = np.mean(avg_data, axis=0)
+            #print(f"Len Avg Trace: {len(avg_trace)}")
+            #print(f"Len time: {len(time_axis)}")
+            if len(avg_trace) > len(time_axis):
+                avg_trace=avg_trace[0:len(time_axis)-1]
+                print("this")
+            if len(avg_trace) < len(time_axis):
+                time_axis = time_axis[0:len(avg_trace)-1]
+                print("that")
+            if ax is None:
+                fig, ax = plt.subplots(1)
+            else:
+                plt.sca(ax)
+            plt.plot(time_axis, avg_trace, color = color[n])
+            n = n + 1
+        plt.xlabel("Time(sec)")
+        plt.ylabel("Amplitude")
+        if monte_carlo:
+            mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(spec_channel=channel, onset_event=event,pre_onset=-lbound,post_onset=rbound)
             plt.plot(time_axis, mc_avg, color = "blue", linewidth = 2)
             plt.plot(time_axis, mc_plus, color = "blue")
             plt.plot(time_axis, mc_minus, color = "blue")
@@ -1239,14 +1295,14 @@ class Sessions:
         if show:
             plt.show()
     
-    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
+    def plot_eta(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
         n_sessions = len(self._sessions)
         sesh_ind = 1
         if makefig:
             plt.figure()
         for sesh in self._sessions:
             plt.subplot(n_sessions,1, sesh_ind)
-            sesh.plot_elavg(spec_event, bounds, spec_channel = spec_channel, spec_color = spec_color, showtraces = showtraces, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
+            sesh.plot_eta(spec_event, bounds, spec_channel = spec_channel, spec_color = spec_color, showtraces = showtraces, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
             sesh_ind = sesh_ind + 1
             plt.title(sesh.get_sessionID())
         plt.tight_layout()

@@ -24,7 +24,91 @@ from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 #from pydub import AudioSegment
 #from tinytag import TinyTag
+import sys
 
+
+
+""" Events Class """
+
+class events(dict):
+    def __init__(self,*arg,**kw):
+        super(events, self).__init__(*arg, **kw)
+        self.__colors = {}
+
+    def __setitem__(self, key, item):
+        self.__dict__[key] = item
+        if not key in self.__colors:
+            self.__colors[key] = 'k'
+        
+    def __getitem__(self, key):
+        return self.__dict__[key]
+
+    def __repr__(self):
+        return repr(self.__dict__)
+
+    def __len__(self):
+        return len(self.__dict__)
+
+    def __delitem__(self, key):
+        del self.__dict__[key]
+
+    def clear(self):
+        return self.__dict__.clear()
+
+    def copy(self):
+        return self.__dict__.copy()
+
+    def has_key(self, k):
+        return k in self.__dict__
+
+    def update(self, *args, **kwargs):
+        return self.__dict__.update(*args, **kwargs)
+
+    def eventNames(self):
+        x = list(self.__dict__.keys())
+        return x[1:]
+
+    def eventTimes(self):
+        x = list(self.__dict__.values())
+        return x[1:]
+
+    def items(self):
+        return self.__dict__.items()
+
+    def pop(self, *args):
+        return self.__dict__.pop(*args)
+
+    def __cmp__(self, dict_):
+        return self.__cmp__(self.__dict__, dict_)
+
+    def __contains__(self, item):
+        return item in self.__dict__
+
+    def __iter__(self):
+        return iter(self.__dict__)
+
+    def __unicode__(self):
+        return unicode(repr(self.__dict__))
+   
+    def color(self, key):
+        if str(key) in self.__colors:
+            return self.__colors[str(key)]
+        else:
+            return 'k'
+
+    def setColor(self, key, value):
+        self.__colors[str(key)] = value
+
+    def rename(self, key, value):
+        self.__dict__[value] = self.__dict__.pop(key)
+        if key in self.__colors:
+            self.__colors[str(value)] = self.__colors.pop(str(key))
+       
+    def add(self, key, val):
+        self.__dict__[key] = val
+
+    def __hash__(self):
+        return hash(tuple(sorted(self.items())))
 
 """Channel Class """
 
@@ -246,20 +330,19 @@ class Session:
                 with open(self._eventspath) as event_file:
                     timestamps = event_file.readlines()
                     timestamps = timestamps[2:]
-                    events = {}
+                    events = events()
                     for timestamp in timestamps:
                         event = timestamp[0]
                         if event not in events:
                             events[event] = [float(timestamp.split(',')[1])]
                         elif event in events:
-                            temp = events[event]
-                            to_add = timestamp.split(',')
-                            to_add = float(to_add[1])
-                            temp.append(to_add)
-                            events[event] = temp
+                            events[event].append( float(timestamp.split(',')))                            
                 self._events = events 
+            except BaseException as err:
+                print(f"Unexpected {err=}, {type(err)=}")
             except: 
                 print("This event file doesn't exist in your working directory.")
+            
 
     #getter object for Session class
     def get_nchannels(self): #returns number of channels
@@ -288,12 +371,16 @@ class Session:
       returns: Channel corresponding to first Channel in a session class
       '''
       return self._channels[channelindex] 
-    def get_datapath(self): #retruns data path of session
+    
+    @property
+    def datapath(self): #retruns data path of session
       '''
       Returns path of Session data (string object).
       '''
       return self._datapath
-    def get_eventspath(self): #if it exists, events path of session is returned
+    
+    @property
+    def eventspath(self): #if it exists, events path of session is returned
       '''
       Returns path of Session events (string object).
       If there are no session objects, prints a warning message and returns nothing. 
@@ -302,7 +389,9 @@ class Session:
           print("No event path is specified for this session.")
       else: 
           return self._eventspath
-    def get_sessionID(self): #sessionID is returned 
+
+    @property
+    def sessionID(self): #sessionID is returned 
       '''
       Returns ID of session. 
       The session ID is a numbe/string assigned by the user when it is set (see set_sessionID).
@@ -313,7 +402,9 @@ class Session:
           self.set_sessionID()
 
       return self._sessionID
-    def get_subject(self): #subject is returned
+
+    @property
+    def subject(self): #subject is returned
       '''
       Returns name of subject as a string object. 
       The subject is assigned by the user when it is set (see set_subject).
@@ -323,7 +414,9 @@ class Session:
       except AttributeError:
           self.set_subject()
       return self._subject
-    def get_datetime(self): #date and time of session is returned
+
+    @property
+    def datetime(self): #date and time of session is returned
       '''
       Returns datetime object witht he date and time of the session. 
       The date and time is set by the user (see set_datetime).
@@ -333,20 +426,26 @@ class Session:
       except AttributeError:
           self.set_datetime()
       return self._datetime
-    def get_samplerate(self): 
+    
+    @property
+    def samplerate(self): 
       '''
       Returns the sampling rate of the channel data. 
       The sampling rate is set by the user at the initialization of the Session object. 
       It can be modified via the downsampling method (see _decim)
       '''
       return self._samplerate
-    def get_filterfreqs(self):
+    
+    @property
+    def filtering(self):
       '''
       Returns the filter frequencies of the channel data. 
       These are specified by the user
       '''
       return self._filterfreqs 
-    def get_events(self):
+
+    @property
+    def events(self):
       '''
       Returns a dictionary containing the events of a Session if they exist.  
       '''

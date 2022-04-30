@@ -30,9 +30,9 @@ import sys
 
 """ Events Class """
 
-class events(dict):
+class Events(dict):
     def __init__(self,*arg,**kw):
-        super(events, self).__init__(*arg, **kw)
+        super(Events, self).__init__(*arg, **kw)
         self.__colors = {}
 
     def __setitem__(self, key, item):
@@ -111,7 +111,6 @@ class events(dict):
         return hash(tuple(sorted(self.items())))
 
 """Channel Class """
-
 class Channel:
     def __init__(self, data = None, fs= None, filterfreqs= None, label= None, color= None):
         self._data = data if data is not None else [] #data extracted from WAV file, default is empty list
@@ -123,19 +122,27 @@ class Channel:
         self._index = 0
 
     #getter functions for channel attributes
-    def get_data(self):
+
+    @property
+    def data(self):
         return self._data
-    def get_fs(self):
+    @property
+    def fs(self):
         return self._fs
-    def get_time(self):
+    @property
+    def time(self):
         return self._t 
-    def get_filterfreqs(self):
+    @property
+    def filtersettings(self):
         return self._filterfreqs
-    def get_label(self):
+    @property
+    def label(self):
         return self._label
-    def get_color(self):
+    @property
+    def color(self):
         return self._color 
-    def get_index(self):
+    @property
+    def index(self):
         return self._index
     #setter functions for channel attributes
     def set_data(self, data_in):
@@ -330,13 +337,13 @@ class Session:
                 with open(self._eventspath) as event_file:
                     timestamps = event_file.readlines()
                     timestamps = timestamps[2:]
-                    events = events()
+                    events = Events()
                     for timestamp in timestamps:
                         event = timestamp[0]
                         if event not in events:
                             events[event] = [float(timestamp.split(',')[1])]
                         elif event in events:
-                            events[event].append( float(timestamp.split(',')))                            
+                            events[event].append( float(timestamp.split(',')[1]))                            
                 self._events = events 
             except BaseException as err:
                 print(f"Unexpected {err=}, {type(err)=}")
@@ -345,17 +352,20 @@ class Session:
             
 
     #getter object for Session class
-    def get_nchannels(self): #returns number of channels
+    @property
+    def nchannels(self): #returns number of channels
       '''
       Returns the number of channels in a Session object.
       '''
       return self._nchannels     
-    def get_channels(self): #returns list of channel objects
+    @property
+    def channels(self): #returns list of channel objects
       '''
       Returns a list of Channel objects corresponding to the channels in a Session object.
       '''
       return self._channels
-    def get_channeldata(self):#returns channel data in array
+    @property
+    def channeldata(self):#returns channel data in array
       ''' 
       Returns a numpy array of all the channel data in a Session object. 
       '''
@@ -370,7 +380,8 @@ class Session:
       Example: Session1.get_channel(0)
       returns: Channel corresponding to first Channel in a session class
       '''
-      return self._channels[channelindex] 
+      return self._channels[channelindex]
+    channel = property(get_channel) 
     
     @property
     def datapath(self): #retruns data path of session
@@ -836,10 +847,10 @@ class Session:
             plot_size = self._nchannels + 1
         plt.subplot(plot_size, 1, 1)
         session_overview = f"""
-        File Name: {self.get_datapath()}
-        Date and Time : {self.get_datetime()}
-        Sample Rate: {self.get_samplerate()}
-        Session duration (in samples): {len(self.get_channel(0).get_time())} samples
+        File Name: {self.datapath}
+        Date and Time : {self.datetime}
+        Sample Rate: {self.samplerate}
+        Session duration (in samples): {len(self.channel(0).time)} samples
         Session duration (in hh:mm:ss): {time.strftime('%H:%M:%S', time.gmtime(len(self.get_channel(0).get_time())/self.get_samplerate()))} 
         Session ID: {self.get_sessionID()}
         Subject: {self.get_subject()}
@@ -929,9 +940,9 @@ class Session:
             plt.show()
     
     #Original ETA
-    def plot_elavg(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
-        lbound = bounds[0]
-        rbound = bounds[1]
+    def plot_elavg(self, spec_event, timewindow=[-1, 1], spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
+        lbound = timewindow[0]
+        rbound = timewindow[1]
         if makefig:
             plt.figure()
         timemarkers = self._events[spec_event]
@@ -972,19 +983,17 @@ class Session:
         return
     
     #Event Triggered Average
-    def plot_eta(self, events, bounds, channel = 0, color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False, ax=None):
-        lbound = bounds[0]
-        rbound = bounds[1]
+    def plot_eta(self, events, timewindow=[-1, 1], channel = 0,  showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False, ax=None):
+        lbound = timewindow[0]
+        rbound = timewindow[1]
         if np.isscalar(events):
             events = [events]
-        if np.isscalar(color):
-            color = [color]
         if makefig:
             plt.figure()
         n = 0
         for event in events:    
             timemarkers = self._events[event]
-            spec_channel_data = self.get_channel(channel).get_data()
+            spec_channel_data = self.channel(channel).data
             #spec_channel_data = list(spec_channel_data)
             time_axis = np.arange(lbound, rbound, (1/self._samplerate))
             #time_axis = list(time_axis)
@@ -997,7 +1006,7 @@ class Session:
                 else:
                     avg_data.append(data_axis)
                     if showtraces:
-                        plt.plot(time_axis, data_axis, color = color, alpha = alpha)
+                        plt.plot(time_axis, data_axis, color = self._events.color(event), alpha = alpha)
                 
             avg_trace = np.mean(avg_data, axis=0)
             #print(f"Len Avg Trace: {len(avg_trace)}")

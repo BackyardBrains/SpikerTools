@@ -952,7 +952,7 @@ class Session:
             for timemarker in timemarkers:
                 data_axis = self.channels[channel].data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
                 if len(data_axis) != len(time_axis):
-                    print("Uneven Row")
+                    #print("Uneven Row")
                     pass
                 else:
                     avg_data.append(data_axis)
@@ -972,7 +972,7 @@ class Session:
                 fig, ax = plt.subplots(1)
             else:
                 plt.sca(ax)
-            plt.plot(time_axis, avg_trace, color = color[n])
+            plt.plot(time_axis, avg_trace, color = self.events.color(event))
             n = n + 1
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")
@@ -1354,21 +1354,21 @@ class Sessions:
         if show:
             plt.show()
     
-    def plot_eta(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
+    def plot_eta(self, events, timewindow, channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
         n_sessions = len(self._sessions)
         sesh_ind = 1
         if makefig:
             plt.figure()
         for sesh in self._sessions:
             plt.subplot(n_sessions,1, sesh_ind)
-            sesh.plot_eta(spec_event, bounds, spec_channel = spec_channel, spec_color = spec_color, showtraces = showtraces, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
+            sesh.plot_eta(events = events, timewindow = timewindow, channel = channel, showtraces = showtraces, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
             sesh_ind = sesh_ind + 1
-            plt.title(sesh.get_sessionID())
+            plt.title(sesh.sessionID)
         plt.tight_layout()
         if show:
             plt.show()
 
-    def plot_eltraces(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig = True, monte_carlo=False):
+    def plot_eltraces(self, events, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig = True, monte_carlo=False):
         n_sessions = len(self._sessions)
         sesh_ind = 1
         if makefig:
@@ -1396,12 +1396,3 @@ class Sessions:
         if show:
             plt.show()
         pass
-    
-    
-    
-        
-        
-    
-    
-        
-        

@@ -12,6 +12,8 @@ Original file is located at
 Imports for needed libraries
 """
 
+from operator import sub
+from xml.sax.handler import property_declaration_handler
 import numpy as np
 from scipy import signal  
 import math
@@ -25,20 +27,21 @@ from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 #from pydub import AudioSegment
 #from tinytag import TinyTag
 import sys
-
+import collections
+import os.path
 
 
 """ Events Class """
 
-class Events(dict):
+class Events(collections.UserDict):
     def __init__(self,*arg,**kw):
         super(Events, self).__init__(*arg, **kw)
-        self.__colors = {}
+        self.colors = {}
 
     def __setitem__(self, key, item):
         self.__dict__[key] = item
-        if not key in self.__colors:
-            self.__colors[key] = 'k'
+        if not key in self.colors:
+            self.colors[key] = 'k'
         
     def __getitem__(self, key):
         return self.__dict__[key]
@@ -47,7 +50,7 @@ class Events(dict):
         return repr(self.__dict__)
 
     def __len__(self):
-        return len(self.__dict__)
+        return len(self.__dict__)-1
 
     def __delitem__(self, key):
         del self.__dict__[key]
@@ -64,16 +67,18 @@ class Events(dict):
     def update(self, *args, **kwargs):
         return self.__dict__.update(*args, **kwargs)
 
+    @property
     def eventNames(self):
         x = list(self.__dict__.keys())
-        return x[1:]
+        return x[2:]
 
+    @property
     def eventTimes(self):
         x = list(self.__dict__.values())
-        return x[1:]
+        return x[2:]
 
     def items(self):
-        return self.__dict__.items()
+        return self.__dict__.items[1:]
 
     def pop(self, *args):
         return self.__dict__.pop(*args)
@@ -91,18 +96,18 @@ class Events(dict):
         return unicode(repr(self.__dict__))
    
     def color(self, key):
-        if str(key) in self.__colors:
-            return self.__colors[str(key)]
+        if str(key) in self.colors:
+            return self.colors[str(key)]
         else:
             return 'k'
 
     def setColor(self, key, value):
-        self.__colors[str(key)] = value
+        self.colors[str(key)] = value
 
     def rename(self, key, value):
         self.__dict__[value] = self.__dict__.pop(key)
-        if key in self.__colors:
-            self.__colors[str(value)] = self.__colors.pop(str(key))
+        if key in self.colors:
+            self.colors[str(value)] = self.colors.pop(str(key))
        
     def add(self, key, val):
         self.__dict__[key] = val
@@ -133,7 +138,7 @@ class Channel:
     def time(self):
         return self._t 
     @property
-    def filtersettings(self):
+    def originalfiltersettings(self):
         return self._filterfreqs
     @property
     def label(self):
@@ -145,40 +150,33 @@ class Channel:
     def index(self):
         return self._index
     #setter functions for channel attributes
-    def set_data(self, data_in):
+    @data.setter
+    def data(self, data_in):
         self._data = data_in
         return self._data
-    def set_fs(self, fs_in):
+    @fs.setter
+    def fs(self, fs_in):
         self._fs = fs_in 
         self._t = np.arange(0, (len(self._data)/self._fs), (1/self._fs))
         return self._fs 
-    def set_filterfreqs(self, filterfreqs_in):
+    @originalfiltersettings.setter
+    def originalfiltersettings(self, filterfreqs_in):
         self._filterfreqs = filterfreqs_in
         return self._filterfreqs
-    def set_label (self, label_in):
+    @label.setter
+    def label (self, label_in):
         self._label = label_in
         return self._label
-    def set_color (self, color_in):
+    @color.setter
+    def color (self, color_in):
         self._color = color_in
         return self._color
-    def set_index (self, index_in):
+    @index.setter
+    def index (self, index_in):
         self._index = index_in
         colors = ["k", "b","g", "m", "r"]
         self._color = colors[index_in]
         return self._index  
-    #delete functions for channel attributes
-    def del_data(self):
-        del self._data
-    def del_fs(self):
-        del self._fs
-    def del_time(self):
-        del self._t 
-    def del_filterfreqs(self):
-        del self._filterfreqs
-    def del_label(self):
-        del self._label
-    def del_color(self):
-        del self._color 
     
     #tool functions for channel objects
 
@@ -206,13 +204,13 @@ class Channel:
             out = signal.filtfilt(b_notch, a_notch, self._data)
             self._data = out
         elif (ftype == 'bp'): #bandpass filter
-            assert (isinstance(cutoff, list), "Must specify 2-element list") 
+            assert isinstance(cutoff, list), "Must specify 2-element list"
             b_bpf, a_bpf = signal.butter(filter_order, cutoff, 'bandpass', fs=self._fs)
             out = signal.filtfilt(b_bpf, a_bpf, self._data)
             self._filterfreqs = cutoff
             self._data = out
         elif (ftype == 'br'): #band reject filter
-            assert (isinstance(cutoff, list), "Must specify 2-element list")
+            assert isinstance(cutoff, list), "Must specify 2-element list"
             b_brf, a_brf = signal.butter(filter_order, cutoff, 'bandstop', fs = self._fs)
             out = signal.filtfilt(b_brf, a_brf, self._data)
             self._data = out
@@ -220,7 +218,8 @@ class Channel:
             raise Exception("Incorrect filter type specified!")
         return self
 
-    def get_std(self, interval=[0,0]):
+    @property
+    def std(self, interval=[0,0]):
         if (interval == [0,0]):
             return np.std(self._data)
         else: 
@@ -230,7 +229,7 @@ class Channel:
     
     #downsampling function, applies an anti-aliasing filter first, then downsamples
     #modifies self._fs, self._data, and if anti-aliasing filter is less than lowpass filter, self._filterfreq, and the time vector
-    def decim(self, decim_factor):
+    def decimate(self, decim_factor):
         out_data = signal.decimate(self._data, decim_factor)
         self._data = out_data
         new_fs = self._fs/decim_factor
@@ -250,7 +249,7 @@ class Channel:
             out_data = np.multiply(self._data, std_coeff)
             self._data = out_data 
         elif (norm_type == "scalar"):
-            assert((isinstance(norm_value, float) or isinstance(norm_value, int)), "Must specify number for scalar")
+            assert (isinstance(norm_value, float) or isinstance(norm_value, int)), "Must specify number for scalar"
             #print(type(norm_value))
             out_data = np.multiply(self._data, norm_value)
             self._data = out_data
@@ -275,63 +274,66 @@ class Channel:
 
 class Session: 
 
-    def __init__(self, datapath = "", eventspath = "y"):
-        if (datapath != ""):
-            self._datapath = datapath
-            if datapath.endswith(".wav") or datapath.endswith(".m4a"):
-                if (eventspath == "y"):
-                    self._eventspath = datapath[:-4] + '-events.txt' 
-                elif (eventspath != ""):
-                    self._eventspath = eventspath
-                else:
+    def __init__(self, sessionpath = ""):
+        if (sessionpath != ""):
+            self._sessionpath = sessionpath
+            if sessionpath.endswith(".wav") or sessionpath.endswith(".m4a"):
+                self._eventspath = sessionpath[:-4] + '-events.txt' 
+                if not os.path.exists(self._eventspath):
                     self._eventspath = None
-                    print("No event file specified")
+                    print("No event file found")
         else:
-            self._datapath = None
+            self._sessionpath = None
             self._eventspath = None 
             print("Empty Session object created")
         
         #reading data from file
-        if (self._datapath != None):
+        if (self._sessionpath != None):
             try:
-                if datapath.endswith(".wav"):
-                    sample_rate, data = wavfile.read(self._datapath)
+                if sessionpath.endswith(".wav"):
+                    sample_rate, data = wavfile.read(self._sessionpath)
                     self._samplerate = sample_rate
-                    self._channeldata = data
-                    self._nchannels = np.ndim(data)
                     self._channels = []
-                    if (self._nchannels == 1):
-                        add_channel = Channel(data = self._channeldata, fs= self._samplerate)
-                        add_channel.set_index(0)
+                    self._events = []
+
+                    path_to_date = self._sessionpath
+                    path_to_date = path_to_date.split('_')
+                    date = path_to_date[-2]
+                    date = date.split("-")
+                    date = [int(x) for x in date]
+                    time = path_to_date[-1]
+                    time = time.split(".")[:-1]
+                    time = [int(y) for y in time]
+                    self._datetime = datetime(year=date[0], month=date[1], day=date[2], hour=time[0], minute=time[1], second=time[2])
+
+                    if (np.ndim(data) == 1):
+                        add_channel = Channel(data = data, fs= self._samplerate)
+                        add_channel.index = 0
                         self._channels.append(add_channel)
                     else: 
-                        self._channeldata = np.transpose(self._channeldata)
-                        for i in range(self._nchannels): 
-                            add_channel = Channel(data = self._channeldata[i], fs= self._samplerate)
-                            add_channel.set_index(i)
-                            self._channels.append(add_channel) 
-                elif datapath.endswith(".m4a"):
-                    tag = TinyTag.get(datapath)
+                        for i in range(np.ndim(data)): 
+                            add_channel = Channel(data = np.transpose(data)[i], fs= self._samplerate)
+                            add_channel.index = i
+                            self.channels.append(add_channel) 
+                elif sessionpath.endswith(".m4a"):
+                    tag = TinyTag.get(sessionpath)
                     print("done this")
                     sample_rate = tag.samplerate
-                    data = AudioSegment.from_file(datapath, "m4a")
+                    data = AudioSegment.from_file(sessionpath, "m4a")
                     print("done that")
                     self._samplerate = sample_rate
-                    self._channeldata = data
-                    self._nchannels = np.ndim(data)
                     self._channels = []
-                    if (self._nchannels == 1):
-                        add_channel = Channel(data = self._channeldata, fs= self._samplerate)
-                        add_channel.set_index(0)
+                    if (np.ndim(data) == 1):
+                        add_channel = Channel(data = data, fs= self._samplerate)
+                        add_channel.index = 0
                         self._channels.append(add_channel)
                     else: 
-                        self._channeldata = np.transpose(self._channeldata)
-                        for i in range(self._nchannels): 
-                            add_channel = Channel(data = self._channeldata[i], fs= self._samplerate)
-                            add_channel.set_index(i)
-                            self._channels.append(add_channel) 
-            except: 
-               print("Incorrect filename specified.")
+                        for i in range(np.ndim(data)): 
+                            add_channel = Channel(data = np.transpose(data)[i], fs= self._samplerate)
+                            add_channel.index = i
+                            self.channels.append(add_channel) 
+            except BaseException as err:
+                print(f"Unexpected {err=}, {type(err)=}")
         if (self._eventspath != None):
             try: 
                 with open(self._eventspath) as event_file:
@@ -352,43 +354,20 @@ class Session:
             
 
     #getter object for Session class
-    @property
-    def nchannels(self): #returns number of channels
-      '''
-      Returns the number of channels in a Session object.
-      '''
-      return self._nchannels     
+  
     @property
     def channels(self): #returns list of channel objects
       '''
       Returns a list of Channel objects corresponding to the channels in a Session object.
       '''
       return self._channels
-    @property
-    def channeldata(self):#returns channel data in array
-      ''' 
-      Returns a numpy array of all the channel data in a Session object. 
-      '''
-      return self._channeldata 
-    def get_channel(self, channelindex):#returns specific channel object
-      '''
-      Returns a channel object when a channel index is specified.
-
-      Keyword Arguments:
-      channelindex -- the index of a channel in a Session (0 corresponds to first channel, 1 to second, and so on.)
-
-      Example: Session1.get_channel(0)
-      returns: Channel corresponding to first Channel in a session class
-      '''
-      return self._channels[channelindex]
-    channel = property(get_channel) 
     
     @property
-    def datapath(self): #retruns data path of session
+    def sessionpath(self): #retruns data path of session
       '''
       Returns path of Session data (string object).
       '''
-      return self._datapath
+      return self._sessionpath
     
     @property
     def eventspath(self): #if it exists, events path of session is returned
@@ -433,9 +412,9 @@ class Session:
       The date and time is set by the user (see set_datetime).
       '''
       try:
-           self._datetime
+          self._datetime
       except AttributeError:
-          self.set_datetime()
+          self._datetime
       return self._datetime
     
     @property
@@ -461,7 +440,7 @@ class Session:
       Returns a dictionary containing the events of a Session if they exist.  
       '''
       return self._events
-    
+
     
     #setter object for Session class
     def set_nchannels(self, nchannels): #returns number of channels
@@ -494,21 +473,21 @@ class Session:
           channeldata.append(chan.get_data())
       self._channeldata = channeldata 
       return self._channels
-    def set_datapath(self, datapath, construct = True):
+    def set_sessionpath(self, sessionpath, construct = True):
       '''
       Set the path to Session data file (string object).
 
       Keyword Argument:
-      datapath -- the path to the data file (string)
+      sessionpath -- the path to the data file (string)
       construct -- determines if a Session object should be constructed (bool)
 
       Return:
-      the datapath set for the Session object
+      the sessionpath set for the Session object
       '''
-      self._datapath = datapath 
+      self._sessionpath = sessionpath 
       if construct: 
-           self.__init__(self._datapath)
-      return self._datapath
+           self.__init__(self._sessionpath)
+      return self._sessionpath
     def set_eventspath(self, eventspath, construct = False):
       '''
       Set the path to Session events file (string object).
@@ -522,9 +501,10 @@ class Session:
       '''
       self._eventspath = eventspath
       if construct:
-          self.__init__(datapath=self._datapath, eventspath = self._eventspath)
-      return self._datapath
-    def set_sessionID(self, sessionID = None):
+          self.__init__(sessionpath=self._sessionpath, eventspath = self._eventspath)
+      return self._sessionpath
+    @sessionID.setter
+    def sessionID(self, sessionID = None):
       '''
       Set the Session ID for the Session object.
 
@@ -536,7 +516,8 @@ class Session:
       '''
       self._sessionID = sessionID
       return self._sessionID
-    def set_subject(self, subject= None):
+    @subject.setter
+    def subject(self, subject= None):
       '''
       Set the subject number for the Session object.
 
@@ -548,33 +529,20 @@ class Session:
       '''
       self._subject = subject
       return self._subject
-    def set_datetime(self, auto = True, spec_datetime = None):
+    @datetime.setter
+    def datetime(self, spec_datetime = None):
       '''
       Set the year, month, day, hour, minute and second for the Session object.
 
       Keyword Arguments:
-      auto -- if True use datapath and time to generate the datetime (bool)
       spec_datetime -- set the datetime manually (string)
 
       Return:
       the datetime set for the Session
       '''
-      if auto: 
-          try: 
-            path_to_date = self._datapath
-            path_to_date = path_to_date.split('_')
-            date = path_to_date[-2]
-            date = date.split("-")
-            date = [int(x) for x in date]
-            time = path_to_date[-1]
-            time = time.split(".")[:-1]
-            time = [int(y) for y in time]
-            self._datetime = datetime(year=date[0], month=date[1], day=date[2], hour=time[0], minute=time[1], second=time[2])
-          except: 
-              self._datetime = None
-      else: 
-          self._datetime = spec_datetime
+      self._datetime = spec_datetime
       return self._datetime
+    
     def set_samplerate(self, samplerate):
       '''
       Set the sample rate for the Session object.
@@ -695,15 +663,14 @@ class Session:
         event_plots = []
         event_labels = []
         event_colors = []
-        for event in self._events:
-            color = 'C' + str(color_index)
-            event_colors.append(color)
-            time_markers = self._events[event]
+        for event in self.events.eventNames:
+            color = self.events.color(event)
+            time_markers = self.events[event]
             time_markers_interval = []
             event_label = f"Event {event}"
             event_labels.append(event_label)
             for marker in time_markers: 
-                marker_samp = marker*chosen_channel_fs
+                marker_samp = marker*self.channels[0].fs
                 if (left_bound <= marker_samp) and (right_bound >= marker_samp):
                     time_markers_interval.append(marker)
             markerlength = 10*(max_data - min_data)
@@ -711,7 +678,7 @@ class Session:
             event_plot = plt.scatter(time_markers_interval, y, c = color, marker = "|")
             plt.ylim((0,1))
             #event_plot = plt.eventplot(time_markers_interval, lineoffsets=offset, linelengths= markerlength, linewidths = 1, colors = color, label ='Event')
-            time_axis_lim= self.get_channel(0).get_time()[-1]
+            time_axis_lim= self.channels[0].time[-1]
             plt.xlim(0,time_axis_lim)
             event_plots.append(event_plot)
             color_index = color_index + 1
@@ -838,38 +805,38 @@ class Session:
       
     
         
-    def plot_overview(self, show_events=True, figsize = (6,10)):
+    def plot_overview(self, show_events=True, figsize = (11,8.5)):
         fig = plt.figure(figsize=figsize)
         fig.tight_layout()
         if show_events:
-            plot_size = self._nchannels + 3
+            plot_size = len(self.channels) + 3
         else:
-            plot_size = self._nchannels + 1
+            plot_size = len(self.channels) + 1
         plt.subplot(plot_size, 1, 1)
         session_overview = f"""
-        File Name: {self.datapath}
+        File Name: {self.sessionpath}
         Date and Time : {self.datetime}
         Sample Rate: {self.samplerate}
-        Session duration (in samples): {len(self.channel(0).time)} samples
-        Session duration (in hh:mm:ss): {time.strftime('%H:%M:%S', time.gmtime(len(self.get_channel(0).get_time())/self.get_samplerate()))} 
-        Session ID: {self.get_sessionID()}
-        Subject: {self.get_subject()}
+        Session duration (in samples): {len(self.channels[0].time)} samples
+        Session duration (in hh:mm:ss): {time.strftime('%H:%M:%S', time.gmtime(len(self.channels[0].time)/self.samplerate))} 
+        Session ID: {self.sessionID}
+        Subject: {self.subject}
         """
-        plt.text(0,0,session_overview, fontsize=8)
-        plt.title(f"Session Overview: {self.get_sessionID()}", fontweight='bold', loc = 'center')
+        plt.text(0,0,session_overview, fontsize=12)
+        plt.title(f"Session Overview: {self.sessionID}", fontweight='bold', loc = 'center', fontsize=18)
         plt.tight_layout()
         plt.axis("off")
         plot_ind = 2
         chan_ind = 0
-        for chan in self._channels:
+        for chan in self.channels:
             plt.subplot(plot_size, 1, plot_ind)
-            plt.plot(chan.get_time(), chan.get_data(), color = chan.get_color())
-            plt.xlim(0, chan.get_time()[-1])
+            plt.plot(chan.time, chan.data, color = chan.color)
+            plt.xlim(0, chan.time[-1])
             #plt.axis("off")
             #plt.subplot(plot_size, 1, plot_ind+1)
-            channel_overview = f"Channel {chan_ind}:  Mean: {round(np.mean(chan.get_data()), 2)} | Standard Dev: {round(chan.get_std(),2)}"
+            channel_overview = f"Channel {chan_ind}:  Mean: {round(np.mean(chan.data), 2)} | Standard Dev: {round(chan.std,2)}"
             #plt.annotate(0,0,channel_overview, fontsize=8, wrap=True)
-            plt.title(channel_overview, loc='left')
+            plt.title(channel_overview, loc='left', fontsize=14)
             plt.axis("off")
             plot_ind = plot_ind + 1
             chan_ind = chan_ind + 1
@@ -880,7 +847,7 @@ class Session:
                 ax.axis('off')
         if show_events:
             plt.subplot(plot_size, 1, plot_ind)
-            e_labels, e_plots, e_colors = self.plot_events(0,len(self._channels[0].get_data()),self.get_samplerate(),np.max(self._channels[0].get_data()),np.min(self._channels[0].get_data()),0)
+            e_labels, e_plots, e_colors = self.plot_events(0,len(self.channels[0].data),self.samplerate,np.max(self.channels[0].data),np.min(self.channels[0].data),0)
             ax = plt.gca()
             ax.axes.xaxis.set_visible(False)
             ax.spines['top'].set_visible(False)
@@ -889,7 +856,7 @@ class Session:
             ax.spines['bottom'].set_visible(False)
             #plt.legend(e_labels,bbox_to_anchor=(0, 0))
             #plt.xlabel("Time (seconds)")
-            plt.title("Events", loc = 'left')
+            plt.title("Events", loc = 'left', fontsize=14)
             plt.tight_layout()
             plt.yticks([])
             ax = plt.gca()
@@ -898,12 +865,10 @@ class Session:
             ax.axis('off')
             #plt.annotate()
             plt.subplot(plot_size,1,plot_ind+1)
-            plt.title("Events Overview", loc = 'left')
             col_index= 0
-            for ev in self.get_events():
-                markers_per_event = self.get_events()[ev]
-                inter_event_interval = np.mean([(markers_per_event[i+1]-markers_per_event[i]) for i in range(len(markers_per_event)-1)])
-                plt.text(0,0.75-((0.75/len(e_colors))*col_index),f"       Event {ev} (n = {len(markers_per_event)}): Avg. Inter-Event Interval = {round(inter_event_interval,2)} \n", color = e_colors[col_index], fontsize=8)
+            for ev in self.events.eventNames:
+                inter_event_interval = np.mean([(self.events[ev][i+1]-self.events[ev][i]) for i in range(len(self.events[ev])-1)])
+                plt.text(0,0.75-((0.75/len(self.events.eventNames))*col_index),f"       Event [{ev}] (n = {len(self.events[ev])}): meInter-Event Interval = {round(inter_event_interval,2)}s \n", color = self.events.color(ev), fontsize=14)
                 col_index=col_index+1 
             plt.axis("off")
 
@@ -993,13 +958,12 @@ class Session:
         n = 0
         for event in events:    
             timemarkers = self._events[event]
-            spec_channel_data = self.channel(channel).data
             #spec_channel_data = list(spec_channel_data)
             time_axis = np.arange(lbound, rbound, (1/self._samplerate))
             #time_axis = list(time_axis)
             avg_data = []
             for timemarker in timemarkers:
-                data_axis = spec_channel_data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
+                data_axis = self.channels[channel].data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
                 if len(data_axis) != len(time_axis):
                     print("Uneven Row")
                     pass

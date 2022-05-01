@@ -320,7 +320,7 @@ class Session:
                             add_channel.index = i
                             self.channels.append(add_channel) 
             except BaseException as err:
-                print(f"Unexpected {err=}, {type(err)=}")
+                print(f"Unexpected {err}, {type(err)}")
         if (self._eventspath != None):
             try: 
                 with open(self._eventspath) as event_file:
@@ -335,7 +335,7 @@ class Session:
                             events[event].append( float(timestamp.split(',')[1]))                            
                 self._events = events 
             except BaseException as err:
-                print(f"Unexpected {err=}, {type(err)=}")
+                print(f"Unexpected {err}, {type(err)}")
             except: 
                 print("This event file doesn't exist in your working directory.")
             

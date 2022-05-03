@@ -969,7 +969,7 @@ class Session:
                 else:
                     avg_data.append(data_axis)
                     if showtraces:
-                        plt.plot(time_axis, data_axis, color = self._events.color(event), alpha = alpha)
+                        plt.plot(time_axis, data_axis, color = event.color, alpha = alpha)
                 
             avg_trace = np.mean(avg_data, axis=0)
             #print(f"Len Avg Trace: {len(avg_trace)}")

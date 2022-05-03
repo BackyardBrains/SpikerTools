@@ -802,14 +802,15 @@ class Session:
       
     
         
-    def plot_overview(self, show_events=True, figsize = (11,8.5)):
-        fig = plt.figure(figsize=figsize)
-        fig.tight_layout()
-        if show_events:
-            plot_size = len(self.channels) + 3
-        else:
-            plot_size = len(self.channels) + 1
-        plt.subplot(plot_size, 1, 1)
+    def plot_overview(self, figsize = (11,8.5)):
+
+        plt.style.use("seaborn-darkgrid")
+        plt.rcParams["font.family"] = "Avenir"
+        plt.rcParams["font.size"] = 16
+
+        fig, f1_axes = plt.subplots(ncols=1, nrows=3+len(self.channels), constrained_layout=True, figsize=figsize)
+        idx = 0
+
         session_overview = f"""
         File Name: {self.sessionpath}
         Date and Time : {self.datetime}
@@ -819,14 +820,17 @@ class Session:
         Session ID: {self.sessionID}
         Subject: {self.subject}
         """
+        plt.axes(f1_axes[idx])
         plt.text(0,0,session_overview, fontsize=12)
         plt.title(f"Session Overview: {self.sessionID}", fontweight='bold', loc = 'center', fontsize=18)
         plt.tight_layout()
         plt.axis("off")
-        plot_ind = 2
+        idx = idx + 1
         chan_ind = 0
+        plot_ind = 0
         for chan in self.channels:
-            plt.subplot(plot_size, 1, plot_ind)
+            plt.axes(f1_axes[idx])
+            idx = idx + 1
             plt.plot(chan.time, chan.data, color = chan.color)
             plt.xlim(0, chan.time[-1])
             #plt.axis("off")
@@ -837,37 +841,35 @@ class Session:
             plt.axis("off")
             plot_ind = plot_ind + 1
             chan_ind = chan_ind + 1
-            if not show_events:
-                ax = plt.gca()
-                bar = AnchoredSizeBar(ax.transData, 1, '1 s', 4)
-                ax.add_artist(bar)
-                ax.axis('off')
-        if show_events:
-            plt.subplot(plot_size, 1, plot_ind)
-            e_labels, e_plots, e_colors = self.plot_events(0,len(self.channels[0].data),self.samplerate,np.max(self.channels[0].data),np.min(self.channels[0].data),0)
-            ax = plt.gca()
-            ax.axes.xaxis.set_visible(False)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
-            ax.spines['left'].set_visible(False)
-            ax.spines['bottom'].set_visible(False)
-            #plt.legend(e_labels,bbox_to_anchor=(0, 0))
-            #plt.xlabel("Time (seconds)")
-            plt.title("Events", loc = 'left', fontsize=14)
-            plt.tight_layout()
-            plt.yticks([])
-            ax = plt.gca()
-            bar = AnchoredSizeBar(ax.transData, 1, '1 s', 4)
-            ax.add_artist(bar)
-            ax.axis('off')
-            #plt.annotate()
-            plt.subplot(plot_size,1,plot_ind+1)
-            col_index= 0
-            for ev in self.events:
-                inter_event_interval = np.mean([(ev.timestamps[i+1]-ev.timestamps[i]) for i in range(len(ev.timestamps)-1)])
-                plt.text(0,0.75-((0.75/len(self.events))*col_index),f"       Event [{ev}] (n = {len(ev.timestamps)}): meInter-Event Interval = {round(inter_event_interval,2)}s \n", color = ev.color, fontsize=14)
-                col_index=col_index+1 
-            plt.axis("off")
+
+        plt.axes(f1_axes[idx])
+        e_labels, e_plots, e_colors = self.plot_events(0,len(self.channels[0].data),self.samplerate,np.max(self.channels[0].data),np.min(self.channels[0].data),0)
+        ax = f1_axes[idx]
+        ax.axes.xaxis.set_visible(False)
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        ax.spines['bottom'].set_visible(False)
+        idx = idx + 1    
+        
+        #plt.legend(e_labels,bbox_to_anchor=(0, 0))
+        #plt.xlabel("Time (seconds)")
+        plt.title("Events", loc = 'left', fontsize=14)
+        plt.tight_layout()
+        plt.yticks([])
+        ax = plt.gca()
+        bar = AnchoredSizeBar(ax.transData, 1, '1 s', 4)
+        ax.add_artist(bar)
+        ax.axis('off')
+        #plt.annotate()
+
+        plt.axes(f1_axes[idx])
+        col_index= 0
+        for ev in self.events:
+            inter_event_interval = np.mean([(ev.timestamps[i+1]-ev.timestamps[i]) for i in range(len(ev.timestamps)-1)])
+            plt.text(0,0.75-((0.75/len(self.events))*col_index),f"       Event [{ev}] (n = {len(ev.timestamps)}): meInter-Event Interval = {round(inter_event_interval,2)}s \n", color = ev.color, fontsize=14)
+            col_index=col_index+1 
+        plt.axis("off")
 
         
         plt.tight_layout()
@@ -1263,6 +1265,9 @@ class Session:
 class Sessions:
     def __init__(self, sessions):
         self._sessions = sessions
+
+    def __len__(self):
+        return len(self._sessions)
     
     def plot_interval(self, channel, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False, join = True):
         if make_fig:

@@ -20,87 +20,95 @@ import os.path
 
 """ Events Class """
 
-class Events(collections.UserDict):
-    def __init__(self,*arg,**kw):
-        super(Events, self).__init__(*arg, **kw)
-        self.colors = {}
+class Events(list):
+    def __init__(self):
+         self.items = []
 
-    def __setitem__(self, key, item):
-        self.__dict__[key] = item
-        if not key in self.colors:
-            self.colors[key] = 'k'
-        
-    def __getitem__(self, key):
-        return self.__dict__[key]
+    def append(self, item):
+         self.items.append (item)
 
     def __repr__(self):
-        return repr(self.__dict__)
+        return self.items
+
+    def __str__(self):
+        return self.eventNames
 
     def __len__(self):
-        return len(self.__dict__)-1
+        return len(self.items)
 
-    def __delitem__(self, key):
-        del self.__dict__[key]
+    def __contains__(self, key):
+        return any(key is item or key == item for item in self.items)
 
-    def clear(self):
-        return self.__dict__.clear()
+    def __iter__(self):
+        self.idx = 0
+        return self
 
-    def copy(self):
-        return self.__dict__.copy()
+    def __next__(self):
+        self.idx += 1
+        try:
+            return self.items[self.idx-1]
+        except IndexError:
+            self.idx = 0
+            raise StopIteration  # Done iterating.
 
-    def has_key(self, k):
-        return k in self.__dict__
+    def __getitem__(self, key):
+        #print("__getitem__ Events" )
+        if type(key) == str:
+            #print (type(key), key, "Events")
+            #print (str(enumerate(self.items)))
+            for count, value in enumerate(self.items):
+                if str(value) == key:
+                    return (self.items[count])
 
-    def update(self, *args, **kwargs):
-        return self.__dict__.update(*args, **kwargs)
+    def __setitem__(self, key, newvalue):
+        #print("__setitem__ Events" )
+        if key in self.items:
+            self.items[key].timestamps.append(float(newvalue))
+        else:
+            e = Event(key)
+            e.timestamps.append(float(newvalue))
+            self.items.append(e)
 
     @property
     def eventNames(self):
-        x = list(self.__dict__.keys())
-        return x[2:]
+        return str(self.items)
+ 
+class Event:
+    def __init__(self, key = None):
+        if isinstance(key, str):
+            self._name = key
+        else: 
+            self._name = "event"
+            print("Empty [Event] class created.")
+        self._timestamps = []
+
+    def __repr__(self):
+        return self._name
+
+    def __eq__(self, other):
+        if isinstance(other, Event):
+            if other.name == self.name:
+                return True
+            else:
+                return False
+        if isinstance(other, str):
+            if other == self.name:
+                return True
+            else:
+                return False
+        else:
+            return False
 
     @property
-    def eventTimes(self):
-        x = list(self.__dict__.values())
-        return x[2:]
-
-    def items(self):
-        return self.__dict__.items[1:]
-
-    def pop(self, *args):
-        return self.__dict__.pop(*args)
-
-    def __cmp__(self, dict_):
-        return self.__cmp__(self.__dict__, dict_)
-
-    def __contains__(self, item):
-        return item in self.__dict__
-
-    def __iter__(self):
-        return iter(self.__dict__)
-
-    def __unicode__(self):
-        return unicode(repr(self.__dict__))
-   
-    def color(self, key):
-        if str(key) in self.colors:
-            return self.colors[str(key)]
-        else:
-            return 'k'
-
-    def setColor(self, key, value):
-        self.colors[str(key)] = value
-
-    def rename(self, key, value):
-        self.__dict__[value] = self.__dict__.pop(key)
-        if key in self.colors:
-            self.colors[str(value)] = self.colors.pop(str(key))
-       
-    def add(self, key, val):
-        self.__dict__[key] = val
-
-    def __hash__(self):
-        return hash(tuple(sorted(self.items())))
+    def name(self):
+        return self._name
+    @name.setter
+    def name(self, key):
+        self._name = key
+    
+    @property
+    def timestamps(self):
+        return self._timestamps
 
 """Channel Class """
 class Channel:
@@ -274,14 +282,16 @@ class Session:
             self._eventspath = None 
             print("Empty Session object created")
         
+        self._channels = []
+        self._events = Events()
+
         #reading data from file
         if (self._sessionpath != None):
             try:
                 if sessionpath.endswith(".wav"):
                     sample_rate, data = wavfile.read(self._sessionpath)
                     self._samplerate = sample_rate
-                    self._channels = []
-                    self._events = []
+                    
 
                     path_to_date = self._sessionpath
                     path_to_date = path_to_date.split('_')
@@ -309,7 +319,6 @@ class Session:
                     data = AudioSegment.from_file(sessionpath, "m4a")
                     print("done that")
                     self._samplerate = sample_rate
-                    self._channels = []
                     if (np.ndim(data) == 1):
                         add_channel = Channel(data = data, fs= self._samplerate)
                         add_channel.index = 0
@@ -326,14 +335,15 @@ class Session:
                 with open(self._eventspath) as event_file:
                     timestamps = event_file.readlines()
                     timestamps = timestamps[2:]
-                    events = Events()
                     for timestamp in timestamps:
-                        event = timestamp[0]
-                        if event not in events:
-                            events[event] = [float(timestamp.split(',')[1])]
-                        elif event in events:
-                            events[event].append( float(timestamp.split(',')[1]))                            
-                self._events = events 
+                        eventname = timestamp[0]
+                        if eventname not in self._events:
+                            e = Event(eventname)
+                            e.timestamps.append( float(timestamp.split(',')[1])) 
+                            self._events.append( e )
+                        else:
+                            self._events[eventname].timestamps.append( float(timestamp.split(',')[1])) 
+                                                       
             except BaseException as err:
                 print(f"Unexpected {err}, {type(err)}")
             except: 
@@ -650,9 +660,9 @@ class Session:
         event_plots = []
         event_labels = []
         event_colors = []
-        for event in self.events.eventNames:
-            color = self.events.color(event)
-            time_markers = self.events[event]
+        for event in self.events:
+            color = event.color
+            time_markers = event.timestamps
             time_markers_interval = []
             event_label = f"Event {event}"
             event_labels.append(event_label)
@@ -853,9 +863,9 @@ class Session:
             #plt.annotate()
             plt.subplot(plot_size,1,plot_ind+1)
             col_index= 0
-            for ev in self.events.eventNames:
-                inter_event_interval = np.mean([(self.events[ev][i+1]-self.events[ev][i]) for i in range(len(self.events[ev])-1)])
-                plt.text(0,0.75-((0.75/len(self.events.eventNames))*col_index),f"       Event [{ev}] (n = {len(self.events[ev])}): meInter-Event Interval = {round(inter_event_interval,2)}s \n", color = self.events.color(ev), fontsize=14)
+            for ev in self.events:
+                inter_event_interval = np.mean([(ev.timestamps[i+1]-ev.timestamps[i]) for i in range(len(ev.timestamps)-1)])
+                plt.text(0,0.75-((0.75/len(self.events))*col_index),f"       Event [{ev}] (n = {len(ev.timestamps)}): meInter-Event Interval = {round(inter_event_interval,2)}s \n", color = ev.color, fontsize=14)
                 col_index=col_index+1 
             plt.axis("off")
 

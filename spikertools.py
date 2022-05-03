@@ -54,11 +54,11 @@ class Events(list):
     def __getitem__(self, key):
         #print("__getitem__ Events" )
         if type(key) == str:
-            #print (type(key), key, "Events")
-            #print (str(enumerate(self.items)))
             for count, value in enumerate(self.items):
                 if str(value) == key:
                     return (self.items[count])
+        if type(key) == int:
+            return (self.items[key])
 
     def __setitem__(self, key, newvalue):
         #print("__setitem__ Events" )
@@ -953,8 +953,10 @@ class Session:
         if makefig:
             plt.figure()
         n = 0
-        for event in events:    
-            timemarkers = self._events[event]
+        for event in events:  
+            if type(event) == str:
+                event = self._events[event]  
+            timemarkers = event.timestamps
             #spec_channel_data = list(spec_channel_data)
             time_axis = np.arange(lbound, rbound, (1/self._samplerate))
             #time_axis = list(time_axis)
@@ -982,7 +984,7 @@ class Session:
                 fig, ax = plt.subplots(1)
             else:
                 plt.sca(ax)
-            plt.plot(time_axis, avg_trace, color = self.events.color(event))
+            plt.plot(time_axis, avg_trace, color = event.color)
             n = n + 1
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude")

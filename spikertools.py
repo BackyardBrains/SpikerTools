@@ -14,7 +14,7 @@ from matplotlib.ticker import MaxNLocator
 from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 #from pydub import AudioSegment
 #from tinytag import TinyTag
-import collections
+from collections import UserList
 import os.path
 
 
@@ -122,7 +122,8 @@ class Channel:
         self._index = 0
 
     #getter functions for channel attributes
-
+    def __len__(self):
+        return len(self._data)
     @property
     def data(self):
         return self._data
@@ -141,9 +142,20 @@ class Channel:
     @property
     def color(self):
         return self._color 
+
     @property
-    def index(self):
-        return self._index
+    def mean(self):
+        return np.mean(self._data)
+
+    @property
+    def std(self):
+        return np.std(self._data)
+
+
+   # @property
+   # def index(self):
+   #     return self._index
+    
     #setter functions for channel attributes
     @data.setter
     def data(self, data_in):
@@ -166,12 +178,12 @@ class Channel:
     def color (self, color_in):
         self._color = color_in
         return self._color
-    @index.setter
-    def index (self, index_in):
-        self._index = index_in
-        colors = ["k", "b","g", "m", "r"]
-        self._color = colors[index_in]
-        return self._index  
+   # @index.setter
+   # def index (self, index_in):
+   #     self._index = index_in
+   #     colors = ["k", "b","g", "m", "r"]
+   #     self._color = colors[index_in]
+   #     return self._index  
     
     #tool functions for channel objects
 
@@ -681,35 +693,31 @@ class Session:
             color_index = color_index + 1
         return event_labels, event_plots, event_colors
 
-    def monte_carlo_avg(self, spec_channel, onset_event, pre_onset, post_onset):
-        channel = self._channels[spec_channel]
-        channel_data = channel.get_data() 
-        onsets = self._events[onset_event]
+    def monte_carlo_avg(self, channel, event, timewindow):
+        
+        if type(channel) == int:
+            channel = self._channels[channel]
+        channel_data = channel.data
+        onsets = event.timestamps
         num_mc_epochs = len(onsets)
         num_mc_sim = 100
 
-        window_size_samples = int((pre_onset + post_onset)*self._samplerate)
-        mc_avgs = np.zeros((num_mc_sim,window_size_samples))
+        sample_size = int((timewindow[1]-timewindow[0])*self._samplerate)
+        mc_avgs = np.zeros((num_mc_sim, sample_size))
         
         for sim in range(num_mc_sim):
-            these_mc_onsets = []
+            
+            mc_event_start_idxs = []
             for i in range(num_mc_epochs):
-                cur_size_mc_onsets = len(these_mc_onsets)
-                while cur_size_mc_onsets == len(these_mc_onsets):
-                    this_random = (len(channel_data)*random.random())/self._samplerate
-                    if this_random not in these_mc_onsets:
-                        if (this_random>pre_onset) and (this_random <((len(channel_data)/self._samplerate)-post_onset)):
-                            these_mc_onsets.append(this_random)
-        
-            these_epochs_data_mc = []
-            for p in range(len(these_mc_onsets)):
-                onset_timestamp = these_mc_onsets[p]
-                sel_start_samp = int((onset_timestamp - pre_onset)*self._samplerate)
-                this_epoch_data_mc = channel_data[sel_start_samp:(sel_start_samp + window_size_samples)]
-                these_epochs_data_mc.append(this_epoch_data_mc)
-        
-            avg_raw_epoch_mc = np.mean(these_epochs_data_mc, axis=0)
+                mc_event_start_idxs.append(random.randint(0, len(channel_data)-sample_size))
+                 
+            data_mc = []
+            for start in mc_event_start_idxs:
+                data_mc.append( channel_data[start: start+sample_size] )
+                
+            avg_raw_epoch_mc = np.mean(data_mc, axis=0)
             mc_avgs[sim,:] = avg_raw_epoch_mc
+
         avg_raw_epoch_mc = np.mean(mc_avgs,0)
         mc_std = np.std(mc_avgs,0)
         mc_avg_epoch = avg_raw_epoch_mc
@@ -766,7 +774,7 @@ class Session:
                     event_labels = event_labels + labels
                 plt.xlabel("Time(sec)")
                 plt.ylabel("Amplitude")
-                plt.tight_layout()
+               
                 if legends:
                     plt.legend(event_labels)
           if show:
@@ -793,7 +801,7 @@ class Session:
                event_labels = event_labels + labels
             plt.xlabel("Time(sec)")
             plt.ylabel("Amplitude")
-            plt.tight_layout()
+           
             if legends:
                 plt.legend(event_labels)
             if show:
@@ -823,7 +831,6 @@ class Session:
         plt.axes(f1_axes[idx])
         plt.text(0,0,session_overview, fontsize=12)
         plt.title(f"Session Overview: {self.sessionID}", fontweight='bold', loc = 'center', fontsize=18)
-        plt.tight_layout()
         plt.axis("off")
         idx = idx + 1
         chan_ind = 0
@@ -855,7 +862,7 @@ class Session:
         #plt.legend(e_labels,bbox_to_anchor=(0, 0))
         #plt.xlabel("Time (seconds)")
         plt.title("Events", loc = 'left', fontsize=14)
-        plt.tight_layout()
+        #plt.tight_layout()
         plt.yticks([])
         ax = plt.gca()
         bar = AnchoredSizeBar(ax.transData, 1, '1 s', 4)
@@ -872,8 +879,10 @@ class Session:
         plt.axis("off")
 
         
-        plt.tight_layout()
+        #plt.tight_layout()
         plt.show()
+
+        fig.savefig("foo.pdf", bbox_inches='tight')
 
         pass
 
@@ -903,135 +912,111 @@ class Session:
         if show:
             plt.show()
     
-    #Original ETA
-    def plot_elavg(self, spec_event, timewindow=[-1, 1], spec_channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
-        lbound = timewindow[0]
-        rbound = timewindow[1]
-        if makefig:
-            plt.figure()
-        timemarkers = self._events[spec_event]
-        spec_channel_data = self.get_channel(spec_channel).get_data()
-        #spec_channel_data = list(spec_channel_data)
-        time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
-        #time_axis = list(time_axis)
-        avg_data = []
-        for timemarker in timemarkers:
-            data_axis = spec_channel_data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
-            if len(data_axis) != len(time_axis):
-                pass
-            else:
-                avg_data.append(data_axis)
-                if showtraces:
-                    plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
-            
-        avg_trace = np.mean(avg_data, axis=0)
-        #print(f"Len Avg Trace: {len(avg_trace)}")
-        #print(f"Len time: {len(time_axis)}")
-        if len(avg_trace) > len(time_axis):
-            avg_trace=avg_trace[0:len(time_axis)-1]
-            print("this")
-        if len(avg_trace) < len(time_axis):
-            time_axis = time_axis[0:len(avg_trace)-1]
-            print("that")
-        plt.plot(time_axis, avg_trace, color = self.get_channel(spec_channel).get_color())
-        plt.xlabel("Time(sec)")
-        plt.ylabel("Amplitude")
-        if monte_carlo:
-            mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(spec_channel=spec_channel, onset_event=spec_event,pre_onset=-lbound,post_onset=rbound)
-            plt.plot(time_axis, mc_avg, color = "blue", linewidth = 2)
-            plt.plot(time_axis, mc_plus, color = "blue")
-            plt.plot(time_axis, mc_minus, color = "blue")
-            plt.fill_between(time_axis, mc_minus,mc_plus,color="blue", alpha=0.2)
-        if show:
-            plt.show()
-        return
-    
-    #Event Triggered Average
-    def plot_eta(self, events, timewindow=[-1, 1], channel = 0,  showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False, ax=None):
-        lbound = timewindow[0]
-        rbound = timewindow[1]
+    #Event Triggered Average of Session
+    def plot_eta(self, events, timewindow=[-1, 1], channel = 0,  showtraces = False, alpha = 0.2, show=True, monte_carlo=False, ax=None):
+
+        traceBounds = [self._channels[channel].mean - (self._channels[channel].std * 3), 
+                        self._channels[channel].mean + (self._channels[channel].std * 3)]
+        
         if np.isscalar(events):
             events = [events]
-        if makefig:
-            plt.figure()
-        n = 0
+
         for event in events:  
             if type(event) == str:
                 event = self._events[event]  
-            timemarkers = event.timestamps
-            #spec_channel_data = list(spec_channel_data)
-            time_axis = np.arange(lbound, rbound, (1/self._samplerate))
+
+            time_axis = np.arange(timewindow[0], timewindow[1], (1/self._samplerate))
+            maxIndex = len(self._channels[channel].data)-1
             #time_axis = list(time_axis)
-            avg_data = []
-            for timemarker in timemarkers:
-                data_axis = self.channels[channel].data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
-                if len(data_axis) != len(time_axis):
-                    #print("Uneven Row")
-                    pass
+            eventTraces = []
+            for timemarker in event.timestamps:
+                startIndex = int((timemarker + timewindow[0])*self._samplerate)
+                if ((startIndex + len(time_axis)) < maxIndex) & (startIndex > 0): #Check to see if we are within bounds of the Channel Data
+                    eventTrace = self.channels[channel].data[startIndex : startIndex + len(time_axis)]
+                    if (eventTrace.min() > traceBounds[0]) and (eventTrace.max() < traceBounds[1]): 
+                        eventTraces.append( eventTrace ) #Add to the buffer
                 else:
-                    avg_data.append(data_axis)
-                    if showtraces:
-                        plt.plot(time_axis, data_axis, color = event.color, alpha = alpha)
+                    print(self._sessionID)
                 
-            avg_trace = np.mean(avg_data, axis=0)
-            #print(f"Len Avg Trace: {len(avg_trace)}")
-            #print(f"Len time: {len(time_axis)}")
-            if len(avg_trace) > len(time_axis):
-                avg_trace=avg_trace[0:len(time_axis)-1]
-                print("this")
-            if len(avg_trace) < len(time_axis):
-                time_axis = time_axis[0:len(avg_trace)-1]
-                print("that")
+                if showtraces:
+                    plt.plot(time_axis, eventTrace, color = event.color, alpha = alpha)
+                
+            avg_trace = np.mean(eventTraces, axis=0)
+           
             if ax is None:
                 fig, ax = plt.subplots(1)
             else:
                 plt.sca(ax)
             plt.plot(time_axis, avg_trace, color = event.color)
-            n = n + 1
-        plt.xlabel("Time(sec)")
-        plt.ylabel("Amplitude")
-        if monte_carlo:
-            mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(spec_channel=channel, onset_event=event,pre_onset=-lbound,post_onset=rbound)
-            plt.plot(time_axis, mc_avg, color = "blue", linewidth = 2)
-            plt.plot(time_axis, mc_plus, color = "blue")
-            plt.plot(time_axis, mc_minus, color = "blue")
-            plt.fill_between(time_axis, mc_minus,mc_plus,color="blue", alpha=0.2)
+
+            if monte_carlo:
+                if len(event.timestamps) > 50:
+                    mc_avg, mc_plus, mc_minus = self.monte_carlo_avg(channel=channel, event=event,timewindow=timewindow)
+                    plt.plot(time_axis, mc_avg, color = "blue", linewidth = 2)
+                    plt.plot(time_axis, mc_plus, color = "blue")
+                    plt.plot(time_axis, mc_minus, color = "blue")
+                    plt.fill_between(time_axis, mc_minus,mc_plus,color="blue", alpha=0.2)
+            
+        plt.axvline(x=0, color = "k")
+        m = self.channels[channel].mean
+        plt.axhline(y=m, color = "k", dashes=[5,2])
+        #std = self.channels[channel].std
+        #plt.axhline(y=m + std, color = "k")
+        #plt.axhline(y=m - std, color = "k")
+        
+        #plt.xlabel("Time(sec)")
+        #plt.ylabel("Amplitude")
+        
         if show:
-            plt.show()
+            plt.show()  
         return
     
-    def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig=True):
-        lbound = bounds[0]
-        rbound = bounds[1]
-        if makefig:
-            fig = plt.figure()
-        timemarkers = self._events[spec_event]
-        spec_channel_data = self.get_channel(spec_channel).get_data()
-        time_axis = np.arange(0, -lbound + rbound, (1/self._samplerate))
-        plot_index = 1
-        ylim_top =  np.max(spec_channel_data)
-        ylim_bottom = np.min(spec_channel_data)
-        for timemarker in timemarkers:
-            data_axis = spec_channel_data[int((timemarker + lbound)*self._samplerate): int((timemarker + rbound)*self._samplerate)]
-            plt.subplot(len(timemarkers),1,plot_index)
-            plt.plot(time_axis, data_axis, color = spec_color, alpha = alpha)
-            plt.ylabel("Amplitude")
-            #plt.autoscale(False)
+    def plot_joydiv(self, events, timewindow=[-1, 1], channel = 0, alpha = 0.2, show=True):
+
+        time_axis = np.arange(timewindow[0], timewindow[1], (1/self._samplerate))
+        maxIndex = len(self._channels[channel].data)-1
+        offset = self._channels[channel].std*1.5
+        traceBounds = [self._channels[channel].mean - (self._channels[channel].std * 3), 
+                        self._channels[channel].mean + (self._channels[channel].std * 3)]
+            
+        if np.isscalar(events):
+            events = [events]
+
+        trace_index = 1
+        fig = plt.figure(figsize=(8.5, 11), dpi=300)
+        for event in events:  
+            if type(event) == str:
+                event = self._events[event]  
+
+            time_axis = np.arange(timewindow[0], timewindow[1], (1/self._samplerate))
+
+            for timemarker in event.timestamps:
+
+                startIndex = int((timemarker + timewindow[0])*self._samplerate)
+                if ((startIndex + len(time_axis)) < maxIndex) & (startIndex > 0): #Check to see if we are within bounds of the Channel Data
+                    eventTrace = self.channels[channel].data[startIndex : startIndex + len(time_axis)]
+                else:
+                    print(self._sessionID)
+
+                if (eventTrace.min() < traceBounds[0]) or (eventTrace.max() > traceBounds[1]): 
+                    plt.plot(time_axis, eventTrace - offset*(trace_index - 1), color = event.color, alpha = 1)
+                else:
+                    plt.plot(time_axis, eventTrace - offset*(trace_index - 1), color = event.color, alpha = alpha)
+                trace_index = trace_index + 1
+                
+            
             ax = plt.gca()
-            ax.axes.xaxis.set_visible(False)
+            ax.axes.xaxis.set_visible(True)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             ax.spines['left'].set_visible(False)
-            ax.spines['bottom'].set_visible(False)
-            ax.set_ylim(ylim_bottom, ylim_top)
+            ax.spines['bottom'].set_visible(True)
             ax.axes.yaxis.set_visible(False)
-            if plot_index == len(timemarkers):
-                ax.axes.xaxis.set_visible(True)
-                ax.spines['bottom'].set_visible(True)
-            plot_index = plot_index + 1
-        fig.supxlabel('Time')
-        fig.supylabel('Traces')
-        fig.tight_layout()
+            plt.xlabel('Time')
+            plt.ylabel('Traces')
+            plt.axvline(x=0, color = "k")
+            plt.title(self._sessionID)
+        
         if show:
             plt.show()
         return
@@ -1221,7 +1206,7 @@ class Session:
             plt.legend(onset_event)
             plt.axvline(0, color = "r")
             
-            fig.tight_layout()
+            #fig.tight_layout()
             plt.show()
             pass
         else:
@@ -1259,65 +1244,70 @@ class Session:
             plt.ylabel("Count")
             plt.axvline(0, color = "r")
 
-            fig.tight_layout()
+            #fig.tight_layout()
             plt.show()
                     
-class Sessions:
-    def __init__(self, sessions):
-        self._sessions = sessions
+class Sessions(UserList):
+    def __init__(self, sessions = None):
+        super().__init__(sessions)
+        if sessions is None:
+            self.data = []
 
     def __len__(self):
-        return len(self._sessions)
+        return len(self.data)
+
+    def append(self, session):
+        return self.data.append(session)
     
     def plot_interval(self, channel, bounds, offset=0, events = False, event_marker_factor=2, show = True, make_fig = True, legends=False, join = True):
         if make_fig:
             fig = plt.figure()
         if join:
-            for sesh in self._sessions:
+            for sesh in self.data:
                 sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=False)
             if legends:
-                plt.legend([sesh.get_sessionID() for sesh in self._sessions])
+                plt.legend([sesh.get_sessionID() for sesh in self.data])
             if show:
                 plt.show()
         else:
-            n_sessions = len(self._sessions)
+            n_sessions = len(self.data)
             sesh_ind = 1
-            for sesh in self._sessions:
+            for sesh in self.data:
                 plt.subplot(n_sessions,1, sesh_ind)
                 sesh.plot_interval(channel, bounds, offset=offset, events = events, event_marker_factor= event_marker_factor, show = False, make_fig = False, legends=legends)
                 sesh_ind = sesh_ind + 1
                 plt.title(sesh.get_sessionID())
             if show:
-                plt.tight_layout()
+               
                 plt.show()
     
     def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, time_res=0.5, show=True, makefig=True, join = True):
         if makefig:
             fig = plt.figure()
         if join:
-            for sesh in self._sessions:
+            for sesh in self.data:
                 sesh.plot_psd(spec_channel, bounds = bounds, freq_bounds=freq_bounds, amp_bounds=amp_bounds, freq_res =freq_res, time_res=time_res, show=False, makefig=False)
-            plt.legend([sesh.get_sessionID() for sesh in self._sessions])
+            plt.legend([sesh.get_sessionID() for sesh in self.data])
             if show:
                 plt.show()
         else:
-            n_sessions = len(self._sessions)
+            n_sessions = len(self.data)
             sesh_ind = 1
-            for sesh in self._sessions:
+            for sesh in self.data:
                 plt.subplot(n_sessions,1, sesh_ind)
                 sesh.plot_psd(spec_channel, bounds = bounds, freq_bounds=freq_bounds, amp_bounds=amp_bounds, freq_res =freq_res, time_res=time_res, show=False, makefig=False)
                 sesh_ind = sesh_ind + 1
                 plt.title(sesh.get_sessionID())
             if show:
-                plt.tight_layout()
+               
                 plt.show()
     
     def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins, figsize = None):
         fig = plt.figure(figsize=figsize)
-        nsessions = len(self._sessions)
+        nsessions = len(self.data)
         sesh_index = 2
         all_spikes_sessions = []
-        for sesh in self._sessions:
+        for sesh in self.data:
             num_trials = len(sesh._events[onset_event])
             trials = sesh._events[onset_event]
             spikes = sesh._events[spike_event]
@@ -1348,68 +1338,72 @@ class Sessions:
 
         plt.subplot(1+nsessions,1,1)
         plt.title("Peri-Event Time Histogram")
-        for sesh_iter in range(len(self._sessions)):
+        for sesh_iter in range(len(self.data)):
             plt.hist(all_spikes_sessions[sesh_iter], bins = nbins, range = bounds, histtype=u"step")
         plt.ylabel("Count")
-        plt.legend([sesh.get_sessionID() for sesh in self._sessions])
+        plt.legend([sesh.get_sessionID() for sesh in self.data])
         plt.axvline(0, color = "r")
         
         fig.tight_layout()
         plt.show()
 
     def plot_spectrogram(self, spec_channel, freq_res = 1, time_res=0.5, bounds = (0, None), freq_bounds=None, amp_bounds = None, makefig=True, show=True):
-        n_sessions = len(self._sessions)
+        n_sessions = len(self.data)
         sesh_ind = 1
         if makefig:
             plt.figure()
-        for sesh in self._sessions:
+        for sesh in self.data:
             plt.subplot(n_sessions,1, sesh_ind)
             sesh.plot_spectrogram(spec_channel, freq_res = freq_res, time_res= time_res, bounds = bounds, freq_bounds= freq_bounds, amp_bounds = amp_bounds, makefig=False, show=False)
             sesh_ind = sesh_ind + 1
             plt.title(sesh.get_sessionID())
-        plt.tight_layout()
+       
         if show:
             plt.show()
     
-    def plot_eta(self, events, timewindow, channel = 0, spec_color = 'k', showtraces = False, alpha = 0.2, show=True, makefig=True, monte_carlo=False):
-        n_sessions = len(self._sessions)
-        sesh_ind = 1
-        if makefig:
-            plt.figure()
-        for sesh in self._sessions:
-            plt.subplot(n_sessions,1, sesh_ind)
-            sesh.plot_eta(events = events, timewindow = timewindow, channel = channel, showtraces = showtraces, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
-            sesh_ind = sesh_ind + 1
-            plt.title(sesh.sessionID)
-        plt.tight_layout()
-        if show:
-            plt.show()
+    def plot_eta(self, events, timewindow, channel = 0, showtraces = False, alpha = 0.2, monte_carlo=False):
+        n_sessions = len(self.data)
+        sesh_ind = 0
+        fig, ax = plt.subplots(n_sessions,1)
+        fig.set_size_inches(8.5, 11)
 
-    def plot_eltraces(self, events, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig = True, monte_carlo=False):
-        n_sessions = len(self._sessions)
-        sesh_ind = 1
-        if makefig:
-            plt.figure()
-        for sesh in self._sessions:
-            plt.subplot(n_sessions,1, sesh_ind)
-            sesh.plot_eltraces(spec_event, bounds, spec_channel = spec_channel, spec_color = spec_color, alpha = alpha, show=False, makefig=False, monte_carlo=monte_carlo)
+        for sesh in self.data:
+            sesh.plot_eta(events = events, timewindow = timewindow, channel = channel, showtraces = showtraces, alpha = alpha, show=False, monte_carlo=monte_carlo, ax=ax[sesh_ind])
+            
+            #plt.sca(ax[sesh_ind])
+            #plt.title(sesh.sessionID)
+            
+            ax[sesh_ind].spines['top'].set_visible(False)
+            ax[sesh_ind].spines['right'].set_visible(False)
+            ax[sesh_ind].spines['left'].set_visible(True)
+            ax[sesh_ind].spines['bottom'].set_visible(True)
+            ax[sesh_ind].axes.xaxis.set_visible(False)
+            ax[sesh_ind].axes.yaxis.set_visible(True)
+            ax[sesh_ind].set_yticks([])
+            plt.ylabel(sesh.subject)
+            plt.xlim(timewindow)
+            plt.axvline(x=0, color = "k")
+            if sesh_ind == len(self.data)-1 :
+                plt.xlabel('Time')
+                ax[sesh_ind].axes.xaxis.set_visible(True)
+            
             sesh_ind = sesh_ind + 1
-            plt.title(sesh.get_sessionID())
-        plt.tight_layout()
-        if show:
-            plt.show()
+
         
+        plt.show()
+        fig.savefig('session.pdf', dpi=100)
+
     def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig=True):
-        n_sessions = len(self._sessions)
+        n_sessions = len(self.data)
         sesh_ind = 1
         if makefig:
             plt.figure()
-        for sesh in self._sessions:
+        for sesh in self.data:
             plt.subplot(n_sessions,1, sesh_ind)
             sesh.plot_joydiv(spec_event, bounds , spec_channel = spec_channel, spec_color = spec_color, alpha = alpha, show=False, makefig=False)
             sesh_ind = sesh_ind + 1
             plt.title(sesh.get_sessionID())
-        plt.tight_layout()
+       
         if show:
             plt.show()
         pass

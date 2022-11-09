@@ -1057,6 +1057,7 @@ class Session:
         plt.ylabel("Amplitude")
         plt.legend(event_labels)
         plt.show()
+        return plt
 
     def plot_mag_spectrum(self, spec_channel, bounds=(0,None)):
         '''
@@ -1085,6 +1086,7 @@ class Session:
         plt.xlabel("Time(sec)")
         plt.ylabel("Amplitude of Spectrum")
         plt.show()
+        return plt
 
     def plot_spectrogram(self, spec_channel, freq_res = 1, time_res=0.5, bounds = (0, None), freq_bounds=None, amp_bounds = None, makefig=True, show=True):
         '''
@@ -1125,6 +1127,7 @@ class Session:
         plt.ylabel("Frequency")
         if show:
             plt.show()
+        return plt
 
     def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, time_res=0.5, show=True, makefig=True):
         '''
@@ -1161,6 +1164,7 @@ class Session:
             plt.xlim(freq_bounds)
         if show:
             plt.show()
+        return plt
     
     def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins, figsize = None):
         if isinstance(onset_event, list):
@@ -1246,6 +1250,7 @@ class Session:
 
             #fig.tight_layout()
             plt.show()
+            return plt
                     
 class Sessions(UserList):
     def __init__(self, sessions = None):
@@ -1278,8 +1283,8 @@ class Sessions(UserList):
                 sesh_ind = sesh_ind + 1
                 plt.title(sesh.get_sessionID())
             if show:
-               
                 plt.show()
+        return plt
     
     def plot_psd(self, spec_channel, bounds = (0, None), freq_bounds=None, amp_bounds=None, freq_res =1, time_res=0.5, show=True, makefig=True, join = True):
         if makefig:
@@ -1299,8 +1304,8 @@ class Sessions(UserList):
                 sesh_ind = sesh_ind + 1
                 plt.title(sesh.get_sessionID())
             if show:
-               
                 plt.show()
+        return plt
     
     def plot_peth(self, spec_channel, bounds, onset_event, spike_event, nbins, figsize = None):
         fig = plt.figure(figsize=figsize)
@@ -1346,6 +1351,7 @@ class Sessions(UserList):
         
         fig.tight_layout()
         plt.show()
+        return plt
 
     def plot_spectrogram(self, spec_channel, freq_res = 1, time_res=0.5, bounds = (0, None), freq_bounds=None, amp_bounds = None, makefig=True, show=True):
         n_sessions = len(self.data)
@@ -1360,6 +1366,7 @@ class Sessions(UserList):
        
         if show:
             plt.show()
+        return plt
     
     def plot_eta(self, events, timewindow, channel = 0, showtraces = False, alpha = 0.2, monte_carlo=False):
         n_sessions = len(self.data)
@@ -1392,6 +1399,7 @@ class Sessions(UserList):
         
         plt.show()
         fig.savefig('session.pdf', dpi=100)
+        return plt
 
     def plot_joydiv(self, spec_event, bounds, spec_channel = 0, spec_color = 'k', alpha = 0.2, show=True, makefig=True):
         n_sessions = len(self.data)
@@ -1407,3 +1415,4 @@ class Sessions(UserList):
         if show:
             plt.show()
         pass
+        return plt

@@ -13,11 +13,9 @@ class SessionPlots:
 
     def overview(self, session=None):
         if session is None:
-            session =  self._Session
+            session = self._Session
 
-        plt.rcParams["font.family"] = "Courier New"
-        plt.rcParams["font.size"] = 14
-        fig, f1_axes = plt.subplots(ncols=1, nrows=3+len(session.channels), constrained_layout=True, figsize=(11,8.5))
+        fig, f1_axes = plt.subplots(ncols=1, nrows=3 + len(session.channels), constrained_layout=True, figsize=(11, 8.5))
         idx = 0
 
         session_overview = f"""
@@ -30,51 +28,35 @@ class SessionPlots:
         Subject: {session.subject}
         """
         plt.axes(f1_axes[idx])
-        plt.text(0,0,session_overview, fontsize=12)
-        plt.title(f"Session Overview: {session.sessionID}", fontweight='bold', loc = 'center', fontsize=18)
+        plt.text(0, 0, session_overview)
+        plt.title(f"Session Overview: {session.sessionID}")
         plt.axis("off")
         idx = idx + 1
-        
-        plot_ind = 0
+
         for chan in session.channels:
             plt.axes(f1_axes[idx])
             idx = idx + 1
-            plt.plot(chan.time, chan.data, color = chan.color)
+            plt.plot(chan.time, chan.data, color=chan.color)
             plt.xlim(0, chan.time[-1])
-            plt.title(f"Channel {chan.number}: {chan.name}:  Mean: {round(chan.mean, 2)} | Standard Dev: {round(chan.std,2)}", loc='left', fontsize=14)
+            plt.title(f"Channel {chan.number}: {chan.name}:  Mean: {round(chan.mean, 2)} | Standard Dev: {round(chan.std, 2)}")
             plt.axis("off")
-            plot_ind = plot_ind + 1
-
 
         plt.axes(f1_axes[idx])
         self.events()
 
         ax = f1_axes[idx]
-        ax.axes.xaxis.set_visible(False)
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        ax.spines['left'].set_visible(False)
-        ax.spines['bottom'].set_visible(False)
-        idx = idx + 1    
-            
-        plt.title("Events", loc = 'left', fontsize=14)
-        plt.yticks( )
-        ax = plt.gca()
-        bar = AnchoredSizeBar(ax.transData, 1, '1 s', 4, frameon=False)
-        ax.add_artist(bar)
         ax.axis('off')
+        idx = idx + 1
 
         plt.axes(f1_axes[idx])
         col_index = 0
         for ev in session.events:
             inter_event_interval = np.diff(ev.timestamps)
-            plt.text(0,0.75-((0.75/len(session.events))*col_index),f"       Event [{ev.name}] (n = {len(ev.timestamps)}): Mean Inter-Event Interval = {inter_event_interval[0]:.2f}s \n", color = ev.color, fontsize=14)
-            col_index += 1 
+            plt.text(0, 0.75 - ((0.75 / len(session.events)) * col_index), f"       Event [{ev.name}] (n = {len(ev.timestamps)}): Mean Inter-Event Interval = {inter_event_interval[0]:.2f}s \n", color=ev.color)
+            col_index += 1
         plt.axis("off")
 
         plt.show()
-
-        #fig.savefig("foo.pdf", bbox_inches='tight')
 
     # plot helper functions
     def events(self, session=None, timerange=None):

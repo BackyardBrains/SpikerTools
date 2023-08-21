@@ -1,7 +1,7 @@
 class Event:
-    def __init__(self, key=None):
-        self._timestamps = []
-        self._eventNumber = None 
+    def __init__(self, key=None, timestamps=None, eventNumber=None):
+        self._timestamps = timestamps
+        self._eventNumber = eventNumber
         self._color = 'k'  
 
         if isinstance(key, Event):
@@ -16,9 +16,13 @@ class Event:
             self.number = key
             self.name = str(key)
         else:
-            raise ValueError("Key should be a string or integer")
+            self.name = 'Event'
+
 
     def __repr__(self): #Allows you to nicely list event names instead of <<objects>>s
+        return self._name
+
+    def __str__(self):
         return self._name
         
     @property

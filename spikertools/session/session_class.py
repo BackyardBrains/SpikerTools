@@ -174,3 +174,16 @@ class Sessions(UserList):
 
     def append(self, session):
         return self.data.append(session)
+    
+    def select(self, key=None, value=None):
+        if key is None:
+            return self
+
+        filtered_sessions = []
+
+        for session in self.data:
+            if key == 'eventName' and any(event.name == value for event in session.events):
+                filtered_sessions.append(session)
+            # Add more conditions here if needed
+
+        return Sessions(filtered_sessions)

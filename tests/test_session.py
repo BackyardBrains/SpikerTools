@@ -80,12 +80,31 @@ class TestSesssion(unittest.TestCase):
         self.session.subject = "Cockroach C18"
         #from spikertools import SessionPlots
         #sp = SessionPlots()
-        self.session.plot.overview()
+        #self.session.plot.overview()
 
         self.assertEqual(len( self.session.channels), 2)   
         self.assertEqual(len( self.session.events), 3) 
         self.assertEqual(len( self.session.neurons), 1) 
         self.assertEqual(len(self.session.neurons[0].timestamps), 379)
-        
+
+    def test_session_filtering_by_event_name(self):
+        # Filter all sessions that have a Dummy event
+        from spikertools import Sessions, Event, Events
+
+        self.session.events.append( Event('Soft', timestamps=[0.1, 1.2, 2.3], eventNumber = 3))
+        sessions = Sessions([self.session])
+        sessions.append( Session())
+
+        sessions[1].events.append( Event())
+        sessions[1].events[0].name = 'Dummy' #Add a dummy session
+
+        filtered_sessions = sessions.select(key='eventName', value='Soft')
+
+        # There should be one session returned
+        self.assertEqual(len(filtered_sessions), 1)
+
+        # The session should be our test session
+        self.assertEqual(filtered_sessions[0], self.session)
+    
 if __name__ == '__main__':
     unittest.main()

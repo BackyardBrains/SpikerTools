@@ -3,7 +3,7 @@ from scipy import signal
 import math
 
 class Channel:
-    def __init__(self, key=None):
+    def __init__(self, data=[], name='', number=0, color='k', sampleRate=None, filters=None ):
 
         class Filters:
             def __init__(self):
@@ -11,25 +11,15 @@ class Channel:
                 self.software = []
                 self.analysis = []
 
-        self._data =  []  # data extracted from WAV file, default is empty list
-        self._name = ''
-        self._number = 0
-        self._color = 'k'
-        self._filters = Filters()
-
-        #if isinstance(key, Channel):
-        #    self._name = key.name
-        #    self._number = key.number + 1
-        #    self._data = np.copy(key.data) 
-        #    self._filters = copy.deepcopy(key.filters)  # <-- Use deepcopy to create a deep copy of the Filters object
-        #    self._filters.hardware = list(key.filters.hardware)
-        #   self._filters.software = list(key.filters.software)
-        #    self._filters.analysis = list(key.filters.analysis)
-
-        if isinstance(key, np.ndarray):
-            self._data = key
-        
-
+        self._data = data  # data extracted from WAV file, default is empty list
+        self._name = name
+        self._number = number
+        self._color = color
+        self._filters = filters
+        self._sampleRate = sampleRate
+        if filters is None:
+            self._filters = Filters()
+    
     @property
     def data(self):
         return self._data
@@ -52,7 +42,7 @@ class Channel:
         return self._sampleRate 
     @sampleRate.setter
     def sampleRate(self, fs_in):
-        self._sampleRate  = fs_in
+        self._sampleRate  = float(fs_in)
         self._t = np.arange(0, len(self._data) / self.sampleRate, 1 / self.sampleRate )
         return self._sampleRate
 
@@ -145,19 +135,22 @@ class Channel:
     # Update: Removed redundant function call
     def decimate(self, decim_factor):
         self._data = signal.decimate(self._data, decim_factor)
-        self._fs /= decim_factor
-        self._filterfreqs[1] = min(self._filterfreqs[1], self._fs / 2)
-        self._t = np.arange(0, len(self._data) / self.fs, 1 / self.fs)
+        self._sampleRate /= decim_factor
+        self._filters.software = min(self._filters.software, self._sampleRate / 2)
+        self._t = np.arange(0, len(self._data) / self._sampleRate, 1 / self._sampleRate)
         return self
 
     # normalization function
     # Update: simplifies the conditionals
     def normalize(self, norm_type, norm_value=None):
-        if norm_type == 'mean':
+        if norm_type == 'mean': # Mean subtracted
             self._data -= np.mean(self._data)
-        elif norm_type == 'std':
+        elif norm_type == 'std': # Dived through subtracted
             self._data /= np.std(self._data)
-        elif norm_type == 'scalar':
+        elif norm_type == 'zscore': # Mean Subtracted, Dived through by STD.
+            self._data -= self.mean
+            self._data /= np.std(self._data)
+        elif norm_type == 'scalar': #multply by a scaler
             assert isinstance(norm_value, (int, float)), "Must specify number for scalar"
             self._data *= norm_value
         else:

@@ -24,6 +24,17 @@ class TestEvent(unittest.TestCase):
         self.assertEqual(copy.number, 10)
         self.assertEqual(copy.timestamps, [1, 2, 3])
 
+    def test_rename_event_copy(self):
+        e = Events()
+        original = Event('original')
+        original.number = 10
+        original.timestamps.extend([1, 2, 3])
+        e.append( original)
+        e['original'].name = 'copy'
+        self.assertEqual(e['copy'].name, 'copy')
+        self.assertEqual(e['copy'].number, 10)
+
+
     def test_invalid_key(self):
         with self.assertRaises(ValueError):
             Event(2.4)

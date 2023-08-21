@@ -52,13 +52,12 @@ class Event:
     def timestamps(self):
         return self._timestamps
 
-
-class Events(list):
+class Events:
     def __init__(self):
-         self.items = []
+        self.items = []
 
     def append(self, item):
-         self.items.append (item)
+        self.items.append(item)
 
     def __repr__(self):
         return self.items
@@ -94,10 +93,13 @@ class Events(list):
             return (self.items[key])
 
     def __setitem__(self, key, newvalue):
-        #print("__setitem__ Events" )
-        if key in self.items:
-            self.items[key].timestamps.append(float(newvalue))
-        else:
+        found = False
+        for item in self.items:
+            if item.name == key:
+                item.timestamps.append(float(newvalue))
+                found = True
+                break
+        if not found:
             e = Event(key)
             e.timestamps.append(float(newvalue))
             self.items.append(e)

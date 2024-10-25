@@ -4,3 +4,4 @@
 .DS_Store
 __pycache__/spikertools.cpython-38.pyc
 venv/
+test.py

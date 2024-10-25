@@ -1,5 +1,6 @@
-from .event.event_class import Event, Events
-from .channel.channel_class import Channel
-from .session.session_class import Session, Sessions
-from .neuron.neuron_class import Neuron, Neurons
-from .plots.session_plots_class import SessionPlots
+# spikertools/__init__.py
+
+from .core import Session, Channel, Event, Neuron
+from .plots import Plots
+
+__all__ = ['Session', 'Channel', 'Event', 'Neuron', 'Plots']

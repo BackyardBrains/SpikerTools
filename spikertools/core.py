@@ -77,21 +77,50 @@ class Session:
                 event.timestamps.append(timestamp)
                 return
         
-        # Check if neuron already exists
-        for neuron in self.neurons:
-            if neuron.name == name:
-                neuron.timestamps.append(timestamp)
-                return
+        # Handle threshold events for neurons
+        if 'thresh' in name.lower():
+            # Use regex to parse threshold events
+            match = re.match(r'_(neuron\d+)thresh(\w+)-(\d+)', name, re.IGNORECASE)
+            if match:
+                neuron_id, thresh_type_partial, thresh_value_str = match.groups()
+                thresh_value = -int(thresh_value_str)  # Assuming thresholds are negative
+
+                # Find the neuron that corresponds to this threshold
+                target_neuron = None
+                for neuron in self.neurons:
+                    if neuron_id in neuron.name:
+                        target_neuron = neuron
+                        break
+                
+                if target_neuron:
+                    if 'hig' in thresh_type_partial.lower():
+                        target_neuron.thresh_high = thresh_value
+                        #print(f"Set high threshold for {target_neuron.name} to {thresh_value}")
+                    elif 'low' in thresh_type_partial.lower():
+                        target_neuron.thresh_low = thresh_value
+                        #print(f"Set low threshold for {target_neuron.name} to {thresh_value}")
+                    else:
+                        print(f"Unknown threshold type in event name: {name}")
+                else:
+                    print(f"Neuron '{neuron_id}' not found for threshold event: {name}")
+                return  # Threshold event processed; exit the method
         
-        # If not, create a new event or neuron
+        # Check if neuron already exists for spike events
         if name.startswith('_'):
+            for neuron in self.neurons:
+                if neuron.name == name:
+                    neuron.timestamps.append(timestamp)
+                    return
+            
+            # If not, create a new neuron
             neuron = Neuron(name, timestamps=[timestamp], color=color)
             self.neurons.append(neuron)
+            #print(f"Added neuron: '{name}' with initial spike at timestamp: {timestamp}")
         else:
+            # If not a neuron, treat as a regular event
             event = Event(name, timestamps=[timestamp], color=color)
             self.events.append(event)
-        
-        print(f"Added {'neuron' if name.startswith('_') else 'event'}: '{name}' at timestamp: {timestamp}")
+            #print(f"Added event: '{name}' at timestamp: {timestamp}")
 
     def _initialize_channels(self):
         # Initialize channels based on the data
@@ -216,6 +245,8 @@ class Neuron:
         self.name = name
         self.timestamps = timestamps or []
         self.color = color
+        self.thresh_high = None  # Added high threshold property
+        self.thresh_low = None   # Added low threshold property
 
     def __repr__(self):
         return self.name
@@ -233,3 +264,5 @@ class Neuron:
             return np.nan
         total_time = self.timestamps[-1] - self.timestamps[0]
         return len(self.timestamps) / total_time if total_time > 0 else np.nan
+
+

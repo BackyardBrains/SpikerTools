@@ -75,10 +75,9 @@ from spikertools import Session
 
 # Load your data file (WAV file and corresponding events file)
 wav_file_path = 'data/neurons/rate_coding/BYB_Recording_2022-01-13_13.18.29.wav'
-events_file_path = 'data/neurons/rate_coding/BYB_Recording_2022-01-13_13.18.29-events.txt'
 
 # Initialize the Session
-session = Session(wav_file_path, events_file_path)
+session = Session(wav_file_path)
 ```
 
 ### Plotting Session Overview
@@ -105,9 +104,9 @@ session.channels[0].filter(ftype='lp', cutoff=10, order=3)
 
 # Plot ERPs for both events on the same axis
 session.plots.plot_erp(
-    event_names=['Standard', 'Oddball'],
-    epoch_window=(-05, 1.0),
-    channel_index=0
+    events=session.events,
+    epoch_window=(-0.5, 1.0),
+    channel=session.channels[0]
 )
 ```
 
@@ -116,12 +115,13 @@ session.plots.plot_erp(
 ```python
 # Plot PETH with raster for a neuron aligned to an event
 session.plots.plot_peth(
-    neuron_name='_ch0_neuron0',
-    event_name='1',
-    epoch_window=(-0.5, 1.0),
-    bin_size=0.01,
-    show_raster=True,
-    show_peth=True
+    neuron=neuron,           # Neuron to plot
+    events=event_list,       # List of Event objects
+    epoch_window=(-0.5, 1.0),      # 500ms before to 1000ms after event
+    bin_size=0.04,           # 40ms bins
+    title="Peri-Event Time Histogram (PETH) with Raster Plots for Touch Pressure Events", # Add a custom title
+    save_path=None, # Save the plot to a file
+    show=True
 )
 ```
 
@@ -130,9 +130,9 @@ session.plots.plot_peth(
 ```python
 # Plot spectrogram of the EEG data with event markers
 session.plots.plot_spectrogram(
-    channel_index=0,
+    channel=session.channels[0],
     freq_range=(0, 50),
-    event_names=['Open', 'Close']
+    events=session.events
 )
 ```
 
@@ -141,10 +141,10 @@ session.plots.plot_spectrogram(
 ```python
 # Plot average power spectra during 'Open' and 'Close' events
 session.plots.plot_average_power(
-    event_names=['Open', 'Close'],
+    events=session.events,
     freq_range=(0, 30),
     epoch_window=(0, 5),
-    channel_index=0
+    channel=session.channels[0]
 )
 ```
 

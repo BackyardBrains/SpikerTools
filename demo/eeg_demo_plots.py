@@ -1,11 +1,4 @@
 from spikertools import Session
-import os
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
-from scipy.signal import welch
-
-# --- Configuration ---
 
 # Paths to EEG data files
 p300_wav_file = 'data/eeg/p300/BYB_Recording_2019-06-11_13.23.58.wav'
@@ -41,7 +34,7 @@ p300_session.channels[p300_channel_index].filter(ftype='lp', cutoff=5, order=3)
 
 print("\n=== Plotting EEG Traces Around Events (2 Minutes) ===")
 p300_session.plots.plot_channels(
-    channels=[p300_channel_index],
+    channels = p300_session.channels,
     time_window=(0, 120),  # 2 minutes window
     save_path=None,
     title="2m of EEG Traces and Events",
@@ -53,9 +46,9 @@ print("\n=== Plotting Event-Related Potentials (ERP) ===")
 
 # Plot ERP for 'standard' and 'oddball' events
 p300_session.plots.plot_erp(
-    event_names=['standard', 'oddball'],
+    events = p300_session.events,
     epoch_window=(-0.5, 1.0),  # 500ms before to 1000ms after event
-    channel_index=p300_channel_index,
+    channel = p300_session.channels[p300_channel_index],
     save_path=None,
     show=True
 )
@@ -86,11 +79,12 @@ print("\n=== Plotting Spectrogram for Alpha Wave (First 30 Seconds) ===")
 
 # Plot spectrogram for channel 0 limited to the first 30 seconds
 alpha_session.plots.plot_spectrogram(
-    channel_index=alpha_channel_index,
+    channel=alpha_session.channels[0], #Channel 1
     freq_range=(0, 50),  # Frequency range to display
-    event_names=['Open', 'Close'],
+    events = alpha_session.events,
     time_window=(0, 30),  # First 30 seconds
     save_path=None,
+    title="Alpha Wave Spectrogram (Note: increase in alpha following eyes closed)",
     show=True
 )
 

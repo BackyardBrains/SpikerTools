@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import logging
 import seaborn as sns  # Import seaborn
-
+   
 # Set global plot style using seaborn
 sns.set_style('whitegrid')  # Use seaborn's 'whitegrid' style
 plt.rcParams['font.family'] = 'Arial'
@@ -32,82 +32,75 @@ class Plots:
             self.logger.addHandler(handler)
 
     def plot_channels(self, channels=None, time_window=None, title=None, save_path=None, show=True):
-        """
-        Plot an overview of the selected channels with event markers.
-        
-        Parameters:
-        - channels (list of int, optional): List of channel indices to include. Defaults to all channels.
-        - time_window (tuple of float, optional): Time window in seconds as (start, end). Defaults to entire duration.
-        - title (str, optional): Title of the plot. If None, a default title is used.
-        - save_path (str, optional): File path to save the plot. If None, displays the plot interactively.
-        - show (bool): Whether to display the plot. Defaults to True.
-        
-        Returns:
-        - None
-        """
-        if channels is None:
-            channels = list(range(len(self.session.channels)))  # All channels
+         """
+         Plots EEG channel data within a specified time window.
+         
+         Parameters:
+         - channels (list of Channel): List of Channel objects to plot. Defaults to all channels.
+         - time_window (tuple): Absolute time window for plotting (start_time, end_time) in seconds.
+         - title (str): Title of the plot.
+         - save_path (str): Path to save the plot.
+         - show (bool): Whether to display the plot.
+         """
+         if channels is None:
+             channels = self.session.channels
+         
+         plt.figure(figsize=(12, 6))
+         
+         for channel in channels:
+             # Extract data within the time window
+             if time_window:
+                 start_time, end_time = time_window
+                 start_idx = int(start_time * channel.sample_rate)
+                 end_idx = int(end_time * channel.sample_rate)
+                 data = channel.data[start_idx:end_idx]
+                 times = np.linspace(start_time, end_time, end_idx - start_idx)
+             else:
+                 data = channel.data
+                 times = np.arange(len(data)) / channel.sample_rate
+             
+             plt.plot(times, data, label=channel.name, color=channel.color)
+         
+         # Plot event markers if present
+         for event in self.session.events:
+             for timestamp in event.timestamps:
+                 if time_window:
+                     if time_window[0] <= timestamp <= time_window[1]:
+                         plt.axvline(x=timestamp, color=event.color, linestyle='--', alpha=0.7)
+                 else:
+                     plt.axvline(x=timestamp, color=event.color, linestyle='--', alpha=0.7)
+         
+         plt.xlabel('Time (s)')
+         plt.ylabel('Amplitude')
+         if title:
+             plt.title(title)
+         else:
+             plt.title('EEG Channel Overview')
+         
+         # Remove duplicate labels in legend
+         handles, labels = plt.gca().get_legend_handles_labels()
+         by_label = dict(zip(labels, handles))
+         if by_label:
+             plt.legend(by_label.values(), by_label.keys(), loc='upper right', fontsize='small')
+         
+         plt.tight_layout()
+         
+         if save_path:
+             plt.savefig(save_path)
+             self.logger.info(f"Session plot saved to {save_path}.")
+         if show:
+             plt.show()
+         else:
+             plt.close()
 
-        sample_rate = self.session.sample_rate
-        if time_window:
-            start_time, end_time = time_window
-        else:
-            total_samples = len(self.session.channels[0].data)
-            start_time = 0
-            end_time = total_samples / sample_rate
-
-        start_idx = int(start_time * sample_rate)
-        end_idx = int(end_time * sample_rate)
-        time_axis = np.linspace(start_time, end_time, end_idx - start_idx)
-
-        plt.figure(figsize=(12, 8))
-
-        offset = 0
-        y_offsets = []
-        for idx in channels:
-            channel = self.session.channels[idx]
-            data_segment = channel.data[start_idx:end_idx]
-            data_offset = data_segment + offset
-            plt.plot(time_axis, data_offset, label=channel.name, color=channel.color)
-            y_offsets.append(offset)
-            offset += np.max(data_segment) - np.min(data_segment) + np.std(data_segment)
-
-        # Plot event markers
-        for event in self.session.events:
-            for timestamp in event.timestamps:
-                if time_window:
-                    if start_time <= timestamp <= end_time:
-                        plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
-                else:
-                    plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
-
-        # Set plot title
-        if title is None:
-            title = 'Session Overview with Event Markers'
-        plt.title(title)
-
-        plt.xlabel('Time (s)')
-        plt.ylabel('Amplitude')
-        handles, labels = plt.gca().get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        plt.legend(by_label.values(), by_label.keys(), loc='upper right', fontsize='small')
-        plt.tight_layout()
-        if save_path:
-            plt.savefig(save_path)
-            self.logger.info(f"Session plot saved to {save_path}.")
-        if show:
-            plt.show()
-        else:
-            plt.close()
-
-    def plot_spectrogram(self, channel_index=0, freq_range=(0, 50), event_names=None, time_window=None, title=None, save_path=None, show=True):
+    def plot_spectrogram(self, channel, freq_range=(0, 50), events=None, time_window=None, title=None, save_path=None, show=True):
         """
         Plots the spectrogram of a selected channel with optional event markers.
         
         Parameters:
-        - channel_index (int): Index of the channel to analyze.
+        - channel: Channel to analyze.
         - freq_range (tuple): Frequency range to display (min_freq, max_freq).
-        - event_names (list): List of event names to mark on the spectrogram.
+        - events (list): List of events to mark on the spectrogram.
         - time_window (tuple, optional): Time window in seconds as (start, end). Defaults to entire duration.
         - title (str, optional): Title of the spectrogram. If None, a default title is used.
         - save_path (str): Path to save the plot.
@@ -118,7 +111,9 @@ class Plots:
         """
         from scipy.signal import spectrogram
 
-        channel = self.session.channels[channel_index]
+        if channel is None:
+            channel = self.session.channels[0]
+
         sample_rate = channel.sample_rate
 
         if time_window:
@@ -153,16 +148,14 @@ class Plots:
         plt.colorbar(label='Power/Frequency (dB/Hz)')
 
         # Plot event markers
-        if event_names:
-            for event_name in event_names:
-                event = next((e for e in self.session.events if e.name == event_name), None)
-                if event:
-                    for timestamp in event.timestamps:
-                        if time_window:
-                            if start_time <= timestamp <= end_time:
-                                plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
-                        else:
+        if events:
+            for event in events:                
+                for timestamp in event.timestamps:
+                    if time_window:
+                        if start_time <= timestamp <= end_time:
                             plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
+                    else:
+                        plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
 
         # Remove duplicate labels in legend
         handles, labels = plt.gca().get_legend_handles_labels()
@@ -179,86 +172,113 @@ class Plots:
         else:
             plt.close()
 
-    def plot_average_power(self, event_names, freq_range=(0, 50), epoch_window=(0, 5), channel_index=0, save_path=None, show=True):
-        """
-        Plots the average power spectrum over epochs for specified events.
+    def plot_average_power(self, events=None, freq_range=(0, 50), epoch_window=(0, 5), channel=None, save_path=None, show=True):
+         """
+         Plots the average power spectrum over epochs for specified events.
+         
+         Parameters:
+         - events (list of Event): List of Event objects to compare.
+         - freq_range (tuple): Frequency range for analysis (min_freq, max_freq) in Hz.
+         - epoch_window (tuple): Absolute time window around each event (start, end) in seconds.
+         - channel (Channel): Channel to analyze.
+         - save_path (str): Path to save the plot.
+         - show (bool): Whether to display the plot.
+         """
+         from scipy.signal import welch
+
+         # Check if channel is None
+         if channel is None:
+            channel = self.session.channels[0]
+
+         # If channel is a list, check its length
+         if isinstance(channel, list):
+            if len(channel) == 1:
+                # Extract the single channel from the list
+                channel = channel[0]
+            else:
+                self.logger.warning("Too many channels specified, using first channel.")
+                channel = channel[0]
         
-        Parameters:
-        - event_names (list): List of event names to compare.
-        - freq_range (tuple): Frequency range for analysis (min_freq, max_freq).
-        - epoch_window (tuple): Time window around each event (start, end) in seconds.
-        - channel_index (int): Index of the channel to analyze.
-        - save_path (str): Path to save the plot.
-        - show (bool): Whether to display the plot.
-        """
-        from scipy.signal import welch
+         sample_rate = channel.sample_rate
+         start_samples = int(epoch_window[0] * sample_rate)
+         end_samples = int(epoch_window[1] * sample_rate)
+ 
+         plt.figure(figsize=(10, 6))
+ 
+         for event in events:
+             if not isinstance(event, object):
+                 self.logger.warning(f"Expected SpikeEvent object, got {type(event)}. Skipping.")
+                 continue
+             
+             epochs = []
+             for timestamp in event.timestamps:
+                 idx = int(timestamp * sample_rate)
+                 start_idx = idx + start_samples
+                 end_idx = idx + end_samples
+                 if start_idx < 0 or end_idx > len(channel.data):
+                     continue
+                 epoch = channel.data[start_idx:end_idx]
+                 epochs.append(epoch)
+             if not epochs:
+                 continue
+             # Concatenate epochs for PSD calculation
+             epochs_data = np.concatenate(epochs)
+             f, Pxx = welch(epochs_data, fs=sample_rate, nperseg=1024)
+             # Limit frequency range
+             freq_mask = (f >= freq_range[0]) & (f <= freq_range[1])
+             plt.plot(f[freq_mask], 10 * np.log10(Pxx[freq_mask]), label=event.name, color=event.color)
+ 
+         plt.xlabel('Frequency [Hz]')
+         plt.ylabel('Power Spectral Density (dB/Hz)')
+         plt.title('Average Power Spectrum')
+         plt.legend()
+         plt.grid(True)
+         plt.tight_layout()
+         if save_path:
+             plt.savefig(save_path)
+             self.logger.info(f"Average power spectrum plot saved to {save_path}.")
+         if show:
+             plt.show()
+         else:
+             plt.close()
 
-        channel = self.session.channels[channel_index]
-        sample_rate = channel.sample_rate
-        start_samples = int(epoch_window[0] * sample_rate)
-        end_samples = int(epoch_window[1] * sample_rate)
-
-        plt.figure(figsize=(10, 6))
-
-        for event_name in event_names:
-            event = next((e for e in self.session.events if e.name == event_name), None)
-            if not event:
-                continue
-            epochs = []
-            for timestamp in event.timestamps:
-                idx = int(timestamp * sample_rate)
-                start_idx = idx + start_samples
-                end_idx = idx + end_samples
-                if start_idx < 0 or end_idx > len(channel.data):
-                    continue
-                epoch = channel.data[start_idx:end_idx]
-                epochs.append(epoch)
-            if not epochs:
-                continue
-            # Concatenate epochs for PSD calculation
-            epochs_data = np.concatenate(epochs)
-            f, Pxx = welch(epochs_data, fs=sample_rate, nperseg=1024)
-            # Limit frequency range
-            freq_mask = (f >= freq_range[0]) & (f <= freq_range[1])
-            plt.plot(f[freq_mask], 10 * np.log10(Pxx[freq_mask]), label=event_name, color=event.color)
-
-        plt.xlabel('Frequency [Hz]')
-        plt.ylabel('Power Spectral Density (dB/Hz)')
-        plt.title('Average Power Spectrum')
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        if save_path:
-            plt.savefig(save_path)
-            self.logger.info(f"Average power spectrum plot saved to {save_path}.")
-        if show:
-            plt.show()
-        else:
-            plt.close()
-
-    def plot_epochs(self, event_name, epoch_window=(-0.5, 1.0), channel_index=0, save_path=None, show=True):
+    def plot_epochs(self, event=None, epoch_window=(-0.5, 1.0), channel=None, save_path=None, show=True):
         """
         Plots individual epochs of the channel data around specified events.
         
         Parameters:
-        - event_name (str): Name of the event to align epochs.
+        - event (Event): Event to plot.
         - epoch_window (tuple): Time window around the event (pre, post) in seconds.
-        - channel_index (int): Index of the channel to analyze.
+        - channel (Channel): Channel to analyze.
         - save_path (str): Path to save the plot.
         - show (bool): Whether to display the plot.
         """
-        channel = self.session.channels[channel_index]
+        
+        if event is None:
+            self.logger.error("No event specified for epochs plot.")
+            return
+        
+        # Check if channel is None
+        if channel is None:
+            self.logger.warning("No channel specified for ERP plot, using first channel.")
+            channel = self.session.channels[0]
+
+        # If channel is a list, check its length
+        if isinstance(channel, list):
+            if len(channel) == 1:
+                # Extract the single channel from the list
+                channel = channel[0]
+            else:
+                self.logger.warning("Too many channels specified, using first channel.")
+                channel = channel[0]
+
         sample_rate = channel.sample_rate
         pre_samples = int(abs(epoch_window[0]) * sample_rate)
         post_samples = int(epoch_window[1] * sample_rate)
         epoch_length = pre_samples + post_samples
         time_axis = np.linspace(epoch_window[0], epoch_window[1], epoch_length)
 
-        event = next((e for e in self.session.events if e.name == event_name), None)
-        if not event:
-            self.logger.error(f"Event '{event_name}' not found.")
-            return
-
+        
         epochs = []
         for timestamp in event.timestamps:
             idx = int(timestamp * sample_rate)
@@ -277,7 +297,7 @@ class Plots:
             plt.plot(time_axis, epoch + i * np.std(epoch), color=channel.color)
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
-        plt.title(f'Epochs around event "{event_name}"')
+        plt.title(f'Epochs around event "{event.name}"')
         plt.axvline(x=0, color='black', linestyle='--', label='Event Onset')
         plt.tight_layout()
         if save_path:
@@ -342,69 +362,101 @@ class Plots:
         else:
             plt.close()
 
-    def plot_peth(self, neuron_name, event_name, epoch_window=(-0.5, 1.0), bin_size=0.01, show_raster=True, show_peth=True, save_path=None, show=True):
+    def plot_peth(self, neuron=None, events=None, epoch_window=(-1.0, 1.0), bin_size=0.05, title=None, save_path=None, show=True):
         """
-        Plots a Peri-Event Time Histogram (PETH) with optional raster plot.
+        Plots the Peri-Event Time Histogram (PETH) with Raster Plot for the specified neuron and events.
         
         Parameters:
-        - neuron_name (str): Name of the neuron.
-        - event_name (str): Name of the event to align spikes.
-        - epoch_window (tuple): Time window around the event (pre, post) in seconds.
-        - bin_size (float): Bin size for the histogram in seconds.
-        - show_raster (bool): Whether to include the raster plot.
-        - show_peth (bool): Whether to include the PETH.
-        - save_path (str): Path to save the plot.
-        - show (bool): Whether to display the plot.
+        - neuron (Neuron, optional): The neuron object to plot spikes for. Defaults to first neuron.
+        - events (list of Event, optional): List of event objects to align spikes to. Defaults to all events.
+        - epoch_window (tuple): Time window around the event (start, end) in seconds.
+        - bin_size (float): Size of each histogram bin in seconds.
+        - title (str, optional): Title of the PETH plot. If None, a default title is used.
+        - save_path (str, optional): Path to save the combined PETH and Raster plot.
+        - show (bool): Whether to display the plot. Defaults to True.
+        
+        Returns:
+        - None
         """
-        neuron = next((n for n in self.session.neurons if n.name == neuron_name), None)
-        if not neuron:
-            self.logger.error(f"Neuron '{neuron_name}' not found.")
+        # Default assignments
+        if neuron is None:
+            if not self.session.neurons:
+                self.logger.error("No neurons available in the session.")
+                return
+            neuron = self.session.neurons[0]
+            self.logger.info("No neuron specified. Using the first neuron in the session.")
+        
+        if events is None:
+            events = self.session.events
+            self.logger.info("No events specified. Using all events in the session.")
+        
+        if not events:
+            self.logger.error("No events provided for PETH plotting.")
             return
-
-        event = next((e for e in self.session.events if e.name == event_name), None)
-        if not event:
-            self.logger.error(f"Event '{event_name}' not found.")
-            return
-
-        event_timestamps = event.timestamps
-        all_spike_times = []
-
-        for event_time in event_timestamps:
-            epoch_start = event_time + epoch_window[0]
-            epoch_end = event_time + epoch_window[1]
-            spike_times = [t - event_time for t in neuron.timestamps if epoch_start <= t <= epoch_end]
-            all_spike_times.extend(spike_times)
-
-        fig, axs = plt.subplots(2 if show_raster and show_peth else 1, 1, figsize=(10, 6), sharex=True)
-        if not isinstance(axs, np.ndarray):
-            axs = [axs]
-
-        if show_raster:
-            # Raster plot
-            for trial_idx, event_time in enumerate(event_timestamps):
-                epoch_start = event_time + epoch_window[0]
-                epoch_end = event_time + epoch_window[1]
-                spike_times = [t - event_time for t in neuron.timestamps if epoch_start <= t <= epoch_end]
-                axs[0].vlines(spike_times, trial_idx + 0.5, trial_idx + 1.5, color=neuron.color)
-            axs[0].set_ylabel('Trial')
-            axs[0].set_title(f'Raster Plot of Neuron "{neuron_name}" aligned to Event "{event_name}"')
-            axs[0].axvline(x=0, color='black', linestyle='--')
-
-        if show_peth:
-            # PETH
+        
+        # Initialize figure with two subplots: PETH and Raster
+        fig, (ax_peth, ax_raster) = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
+                                                gridspec_kw={'height_ratios': [1, 2]})
+        
+        # Plot PETH
+        for event in events:
+            # Align spikes relative to the event
+            aligned_spikes = []
+            for timestamp in event.timestamps:
+                aligned = np.array(neuron.timestamps) - timestamp
+                # Select spikes within the window
+                spikes_in_window = aligned[(aligned >= epoch_window[0]) & (aligned <= epoch_window[1])]
+                aligned_spikes.extend(spikes_in_window)
+            
+            if not aligned_spikes:
+                self.logger.warning(f"No spikes found for event '{event.name}' within the specified window.")
+                continue
+            
+            # Create histogram bins
             bins = np.arange(epoch_window[0], epoch_window[1] + bin_size, bin_size)
-            counts, _ = np.histogram(all_spike_times, bins=bins)
-            firing_rates = counts / (len(event_timestamps) * bin_size)
-            axs[-1].bar(bins[:-1], firing_rates, width=bin_size, color=neuron.color, align='edge')
-            axs[-1].set_xlabel('Time (s)')
-            axs[-1].set_ylabel('Firing Rate (Hz)')
-            axs[-1].set_title(f'PETH of Neuron "{neuron_name}" aligned to Event "{event_name}"')
-            axs[-1].axvline(x=0, color='black', linestyle='--')
-
+            counts, _ = np.histogram(aligned_spikes, bins=bins)
+            
+            # Normalize to firing rate (spikes per second)
+            firing_rate = counts / (len(event.timestamps) * bin_size)
+            
+            # Plot as stairs
+            ax_peth.step(bins[:-1], firing_rate, where='post', label=event.name, color=event.color)
+        
+        # Customize PETH plot
+        ax_peth.set_ylabel('Firing Rate (Hz)')
+        if title:
+            ax_peth.set_title(title)
+        else:
+            ax_peth.set_title('Peri-Event Time Histogram (PETH)')
+        ax_peth.legend()
+        ax_peth.grid(True)
+        
+        # Plot Raster
+        y_ticks = []
+        y_labels = []
+        for idx, event in enumerate(events):
+            for event_num, timestamp in enumerate(event.timestamps):
+                aligned_spikes = np.array(neuron.timestamps) - timestamp
+                spikes_in_window = aligned_spikes[(aligned_spikes >= epoch_window[0]) & (aligned_spikes <= epoch_window[1])]
+                ax_raster.scatter(spikes_in_window, 
+                                  np.full_like(spikes_in_window, idx * len(event.timestamps) + event_num),
+                                  marker='|', color=event.color, s=100)
+            y_ticks.append(idx * len(event.timestamps) + len(event.timestamps)/2 - 0.5)
+            y_labels.append(event.name)
+        
+        ax_raster.set_yticks(y_ticks)
+        ax_raster.set_yticklabels(y_labels)
+        ax_raster.set_xlabel('Time relative to event (s)')
+        ax_raster.set_ylabel('Events')
+        ax_raster.grid(True)
+        
+        # Tight layout
         plt.tight_layout()
+        
+        # Save or show plot
         if save_path:
-            plt.savefig(save_path)
-            self.logger.info(f"PETH plot saved to {save_path}.")
+            plt.savefig(save_path, bbox_inches='tight')
+            self.logger.info(f"PETH and Raster plot saved to {save_path}.")
         if show:
             plt.show()
         else:
@@ -460,59 +512,64 @@ class Plots:
         else:
             plt.close()
     
-    def plot_erp(self, event_names, epoch_window=(-0.5, 1.0), channel_index=0, title=None, save_path=None, show=True):
+    def plot_erp(self, events=None, epoch_window=(-0.5, 1.0), channel=None, title=None, save_path=None, show=True):
         """
-        Plots the Event-Related Potentials (ERP) for specified events.
+        Plots Event-Related Potentials (ERP) for specified events.
         
         Parameters:
-        - event_names (list): List of event names to plot ERPs for.
-        - epoch_window (tuple): Time window around each event (start, end) in seconds.
-        - channel_index (int): Index of the channel to analyze.
-        - title (str, optional): Title of the ERP plot. If None, a default title is used.
-        - save_path (str, optional): Path to save the ERP plot.
+        - events (list of Event): List of Event objects to plot ERP for.
+        - epoch_window (tuple): Relative time window around each event (start, end) in seconds.
+        - channel (Channel): Channel object to analyze.
+        - title (str): Title of the ERP plot.
+        - save_path (str): Path to save the plot.
         - show (bool): Whether to display the plot.
-        
-        Returns:
-        - None
         """
-        from scipy.signal import butter, filtfilt
+         # Check if channel is None
+        if channel is None:
+            self.logger.warning("No channel specified for ERP plot, using first channel.")
+            channel = self.session.channels[0]
 
-        channel = self.session.channels[channel_index]
+        # If channel is a list, check its length
+        if isinstance(channel, list):
+            if len(channel) == 1:
+                # Extract the single channel from the list
+                channel = channel[0]
+            else:
+                self.logger.warning("Too many channels specified, using first channel.")
+                channel = channel[0]
+        
         sample_rate = channel.sample_rate
-        start_time, end_time = epoch_window
-        start_samples = int(start_time * sample_rate)
-        end_samples = int(end_time * sample_rate)
-
-        plt.figure(figsize=(10, 6))
-
-        for event_name in event_names:
-            event = next((e for e in self.session.events if e.name == event_name), None)
-            if not event:
-                continue
+        pre_samples = int(abs(epoch_window[0]) * sample_rate)
+        post_samples = int(epoch_window[1] * sample_rate)
+        epoch_length = pre_samples + post_samples
+        time_axis = np.linspace(epoch_window[0], epoch_window[1], epoch_length)
+ 
+        plt.figure(figsize=(12, 6))
+        
+        for event in events:
+    
             epochs = []
             for timestamp in event.timestamps:
                 idx = int(timestamp * sample_rate)
-                start_idx = idx + start_samples
-                end_idx = idx + end_samples
+                start_idx = idx - pre_samples
+                end_idx = idx + post_samples
                 if start_idx < 0 or end_idx > len(channel.data):
                     continue
                 epoch = channel.data[start_idx:end_idx]
                 epochs.append(epoch)
             if not epochs:
                 continue
-            # Convert list to numpy array for averaging
-            epochs_array = np.array(epochs)
-            mean_epoch = np.mean(epochs_array, axis=0)
-            time_axis = np.linspace(start_time, end_time, len(mean_epoch))
-            plt.plot(time_axis, mean_epoch, label=event_name)
-
-        # Set plot title
-        if title is None:
-            title = 'Event-Related Potentials (ERP)'
-        plt.title(title)
-        plt.axvline(x=0, color='black', linestyle='--', label='Event Onset')
+            # Average across epochs
+            erp = np.mean(epochs, axis=0)
+            plt.plot(time_axis, erp, label=event.name, color=event.color)
+ 
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
+        if title:
+            plt.title(title)
+        else:
+            plt.title('Event-Related Potential (ERP)')
+        plt.axvline(x=0, color='black', linestyle='--', label='Event Onset')
         plt.legend()
         plt.grid(True)
         plt.tight_layout()

@@ -31,13 +31,14 @@ class Plots:
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
 
-    def plot_session(self, channels=None, time_window=None, save_path=None, show=True):
+    def plot_channels(self, channels=None, time_window=None, title=None, save_path=None, show=True):
         """
-        Plot an overview of the entire session with channels and event markers.
+        Plot an overview of the selected channels with event markers.
         
         Parameters:
         - channels (list of int, optional): List of channel indices to include. Defaults to all channels.
         - time_window (tuple of float, optional): Time window in seconds as (start, end). Defaults to entire duration.
+        - title (str, optional): Title of the plot. If None, a default title is used.
         - save_path (str, optional): File path to save the plot. If None, displays the plot interactively.
         - show (bool): Whether to display the plot. Defaults to True.
         
@@ -74,10 +75,17 @@ class Plots:
         # Plot event markers
         for event in self.session.events:
             for timestamp in event.timestamps:
-                if start_time <= timestamp <= end_time:
+                if time_window:
+                    if start_time <= timestamp <= end_time:
+                        plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
+                else:
                     plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
 
-        plt.title('Session Overview with Event Markers')
+        # Set plot title
+        if title is None:
+            title = 'Session Overview with Event Markers'
+        plt.title(title)
+
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
         handles, labels = plt.gca().get_legend_handles_labels()
@@ -92,7 +100,7 @@ class Plots:
         else:
             plt.close()
 
-    def plot_spectrogram(self, channel_index=0, freq_range=(0, 50), event_names=None, save_path=None, show=True):
+    def plot_spectrogram(self, channel_index=0, freq_range=(0, 50), event_names=None, time_window=None, title=None, save_path=None, show=True):
         """
         Plots the spectrogram of a selected channel with optional event markers.
         
@@ -100,13 +108,32 @@ class Plots:
         - channel_index (int): Index of the channel to analyze.
         - freq_range (tuple): Frequency range to display (min_freq, max_freq).
         - event_names (list): List of event names to mark on the spectrogram.
+        - time_window (tuple, optional): Time window in seconds as (start, end). Defaults to entire duration.
+        - title (str, optional): Title of the spectrogram. If None, a default title is used.
         - save_path (str): Path to save the plot.
         - show (bool): Whether to display the plot.
+        
+        Returns:
+        - None
         """
         from scipy.signal import spectrogram
-        
+
         channel = self.session.channels[channel_index]
-        f, t, Sxx = spectrogram(channel.data, fs=channel.sample_rate, nperseg=1024, noverlap=512)
+        sample_rate = channel.sample_rate
+
+        if time_window:
+            start_time, end_time = time_window
+            start_idx = int(start_time * sample_rate)
+            end_idx = int(end_time * sample_rate)
+            data_segment = channel.data[start_idx:end_idx]
+            if len(data_segment) == 0:
+                self.logger.error(f"No data in the specified time window: {time_window} seconds.")
+                return
+            f, t, Sxx = spectrogram(data_segment, fs=sample_rate, nperseg=1024, noverlap=512)
+            # Adjust time axis to absolute time
+            t = t + start_time
+        else:
+            f, t, Sxx = spectrogram(channel.data, fs=sample_rate, nperseg=1024, noverlap=512)
 
         # Limit frequency range
         freq_mask = (f >= freq_range[0]) & (f <= freq_range[1])
@@ -117,7 +144,12 @@ class Plots:
         plt.pcolormesh(t, f, 10 * np.log10(Sxx), shading='gouraud', cmap='viridis')
         plt.ylabel('Frequency [Hz]')
         plt.xlabel('Time [sec]')
-        plt.title('Spectrogram')
+
+        # Set plot title
+        if title is None:
+            title = 'Spectrogram'
+        plt.title(title)
+
         plt.colorbar(label='Power/Frequency (dB/Hz)')
 
         # Plot event markers
@@ -126,12 +158,18 @@ class Plots:
                 event = next((e for e in self.session.events if e.name == event_name), None)
                 if event:
                     for timestamp in event.timestamps:
-                        plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event_name)
+                        if time_window:
+                            if start_time <= timestamp <= end_time:
+                                plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
+                        else:
+                            plt.axvline(x=timestamp, color=event.color, linestyle='--', label=event.name)
 
+        # Remove duplicate labels in legend
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         if by_label:
             plt.legend(by_label.values(), by_label.keys(), loc='upper right', fontsize='small')
+
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path)
@@ -422,53 +460,61 @@ class Plots:
         else:
             plt.close()
     
-    def plot_erp(self, event_names, epoch_window=(-1.0, 1.0), channel_index=0, save_path=None, show=True):
+    def plot_erp(self, event_names, epoch_window=(-0.5, 1.0), channel_index=0, title=None, save_path=None, show=True):
         """
-        Plots the Event-Related Potentials (ERPs) by averaging epochs around specified events.
+        Plots the Event-Related Potentials (ERP) for specified events.
         
         Parameters:
-        - event_names (list of str): List of event names to include in the ERP plot.
-        - epoch_window (tuple): Time window around the event (pre, post) in seconds.
+        - event_names (list): List of event names to plot ERPs for.
+        - epoch_window (tuple): Time window around each event (start, end) in seconds.
         - channel_index (int): Index of the channel to analyze.
-        - save_path (str): Path to save the plot.
+        - title (str, optional): Title of the ERP plot. If None, a default title is used.
+        - save_path (str, optional): Path to save the ERP plot.
         - show (bool): Whether to display the plot.
+        
+        Returns:
+        - None
         """
+        from scipy.signal import butter, filtfilt
+
         channel = self.session.channels[channel_index]
         sample_rate = channel.sample_rate
-        pre_samples = int(abs(epoch_window[0]) * sample_rate)
-        post_samples = int(epoch_window[1] * sample_rate)
-        epoch_length = pre_samples + post_samples
-        time_axis = np.linspace(epoch_window[0], epoch_window[1], epoch_length)
-        
+        start_time, end_time = epoch_window
+        start_samples = int(start_time * sample_rate)
+        end_samples = int(end_time * sample_rate)
+
         plt.figure(figsize=(10, 6))
-        
+
         for event_name in event_names:
             event = next((e for e in self.session.events if e.name == event_name), None)
             if not event:
-                self.logger.error(f"Event '{event_name}' not found.")
-                continue  # Skip this event and proceed to the next
+                continue
             epochs = []
             for timestamp in event.timestamps:
                 idx = int(timestamp * sample_rate)
-                start_idx = idx - pre_samples
-                end_idx = idx + post_samples
+                start_idx = idx + start_samples
+                end_idx = idx + end_samples
                 if start_idx < 0 or end_idx > len(channel.data):
                     continue
                 epoch = channel.data[start_idx:end_idx]
                 epochs.append(epoch)
             if not epochs:
-                self.logger.warning(f"No epochs to plot for event '{event_name}'.")
                 continue
-            # Compute the ERP by averaging the epochs
-            erp = np.mean(epochs, axis=0)
-            # Plot the ERP
-            plt.plot(time_axis, erp, color=event.color, label=event_name)
-        
+            # Convert list to numpy array for averaging
+            epochs_array = np.array(epochs)
+            mean_epoch = np.mean(epochs_array, axis=0)
+            time_axis = np.linspace(start_time, end_time, len(mean_epoch))
+            plt.plot(time_axis, mean_epoch, label=event_name)
+
+        # Set plot title
+        if title is None:
+            title = 'Event-Related Potentials (ERP)'
+        plt.title(title)
+        plt.axvline(x=0, color='black', linestyle='--', label='Event Onset')
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
-        plt.title('Event-Related Potentials (ERPs)')
-        plt.axvline(x=0, color='black', linestyle='--', label='Event Onset')
         plt.legend()
+        plt.grid(True)
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path)

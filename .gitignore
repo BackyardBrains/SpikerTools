@@ -2,6 +2,6 @@
 .vscode/settings.json
 *.egg-info/
 .DS_Store
-__pycache__/spikertools.cpython-38.pyc
+*.pyc
 venv/
 test.py

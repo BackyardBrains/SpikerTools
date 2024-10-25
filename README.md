@@ -91,7 +91,7 @@ session.plots.plot_session()
 ### Event-Related Potential (ERP)
 
 ```python
-# Assign names and colors to events if necessary
+# Make the event markers have meaningful names and add different colors to differntiate on the same plot
 for event in session.events:
     if event.name.strip() == '1':
         event.name = 'Standard'
@@ -100,13 +100,13 @@ for event in session.events:
         event.name = 'Oddball'
         event.color = 'red'
 
-# Filter the channel (optional)
-session.channels[0].filter(ftype='lp', cutoff=30, order=2)
+# Filter the channel to reduce noise (optional)
+session.channels[0].filter(ftype='lp', cutoff=10, order=3)
 
 # Plot ERPs for both events on the same axis
 session.plots.plot_erp(
     event_names=['Standard', 'Oddball'],
-    epoch_window=(-0.2, 0.8),
+    epoch_window=(-05, 1.0),
     channel_index=0
 )
 ```

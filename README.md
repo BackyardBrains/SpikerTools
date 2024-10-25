@@ -193,7 +193,4 @@ Please ensure that your code follows best practices and includes appropriate tes
 
 ## License
 
-SpikerTools is released under the MIT License.
-```
-
-You can copy the above Markdown text and save it as `README.md` in your project directory. Adjust the GitHub repository URL with your actual username for the source installation instructions.
+SpikerTools is released under the **MIT License**.

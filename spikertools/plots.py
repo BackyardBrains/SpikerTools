@@ -95,26 +95,41 @@ class Plots:
          else:
              plt.close()
 
-    def plot_spectrogram(self, channel, freq_range=(0, 50), events=None, time_window=None, title=None, save_path=None, show=True):
+    def plot_spectrogram(self, channel=None, freq_range=(0, 50), events=None, time_window=None, title=None, save_path=None, show=True):
         """
         Plots the spectrogram of a selected channel with optional event markers.
         
         Parameters:
-        - channel: Channel to analyze.
-        - freq_range (tuple): Frequency range to display (min_freq, max_freq).
-        - events (list): List of events to mark on the spectrogram.
+        - channel (Channel, optional): Channel object to analyze. Defaults to the first channel in the session.
+        - freq_range (tuple): Frequency range to display (min_freq, max_freq) in Hz.
+        - events (list of Event, optional): List of Event objects to mark on the spectrogram. Defaults to no events.
         - time_window (tuple, optional): Time window in seconds as (start, end). Defaults to entire duration.
         - title (str, optional): Title of the spectrogram. If None, a default title is used.
-        - save_path (str): Path to save the plot.
+        - save_path (str, optional): Path to save the plot.
         - show (bool): Whether to display the plot.
+        
         
         Returns:
         - None
         """
         from scipy.signal import spectrogram
 
+ # Default to the first channel if none is provided
         if channel is None:
+            if not self.session.channels:
+                self.logger.warning("No channels available for spectrogram plot. Exiting the method.")
+                return
             channel = self.session.channels[0]
+            self.logger.info("No channel specified. Using the first channel in the session.")
+        else:
+            # If channel is a list, handle accordingly
+            if isinstance(channel, list):
+                if len(channel) == 1:
+                    channel = channel[0]
+                    self.logger.info("Multiple channels provided as a list with a single channel. Using the first channel.")
+                else:
+                    self.logger.warning("Multiple channels provided. Using the first channel in the list.")
+                    channel = channel[0]
 
         sample_rate = channel.sample_rate
 

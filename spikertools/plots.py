@@ -9,7 +9,7 @@ import seaborn as sns  # Import seaborn
 sns.set_style('whitegrid')  # Use seaborn's 'whitegrid' style
 
 # Specify a list of fonts with fallbacks
-plt.rcParams['font.family'] = ['Arial', 'Liberation Sans', 'DejaVu Sans', 'sans-serif']
+plt.rcParams['font.family'] = ['DejaVu Sans', 'Liberation Sans', 'Arial', 'sans-serif']
 plt.rcParams['font.size'] = 12
 plt.rcParams['axes.facecolor'] = 'white'
 plt.rcParams['figure.facecolor'] = 'white'

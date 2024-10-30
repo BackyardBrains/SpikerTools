@@ -80,34 +80,32 @@ wav_file_path = 'data/neurons/rate_coding/BYB_Recording_2022-01-13_13.18.29.wav'
 session = Session(wav_file_path)
 ```
 
-### Plotting Session Overview
+### Plotting Channels from Session
 
 ```python
 # Plot the session overview with event markers
-session.plots.plot_session()
+session.plots.plot_channels()
 ```
 
 ### Event-Related Potential (ERP)
 
 ```python
-# Make the event markers have meaningful names and add different colors to differntiate on the same plot
-for event in session.events:
-    if event.name.strip() == '1':
-        event.name = 'Standard'
-        event.color = 'blue'
-    elif event.name.strip() == '2':
-        event.name = 'Oddball'
-        event.color = 'red'
 
-# Filter the channel to reduce noise (optional)
-session.channels[0].filter(ftype='lp', cutoff=10, order=3)
+p300_wav_file = 'data/eeg/p300/BYB_Recording_2019-06-11_13.23.58.wav'
+s = Session(p300_wav_file)
 
-# Plot ERPs for both events on the same axis
-session.plots.plot_erp(
-    events=session.events,
-    epoch_window=(-0.5, 1.0),
-    channel=session.channels[0]
-)
+# Define events for P300 (default is '1' and '2') and add colors
+s.events[0].name = 'standard'
+s.events[0].color = 'blue'
+
+s.events[1].name = 'oddball'
+s.events[1].color = 'red'
+
+# Assign location as name to the P300 channel (Optional)
+s.channels[0].name = 'P4'
+
+# Optional: Filter the P300 channel to reduce high frequency noise
+s.channels[0].filter(ftype='lp', cutoff=10, order=3)
 ```
 
 ### Peri-Event Time Histogram (PETH)
@@ -115,8 +113,8 @@ session.plots.plot_erp(
 ```python
 # Plot PETH with raster for a neuron aligned to an event
 session.plots.plot_peth(
-    neuron=neuron,           # Neuron to plot
-    events=event_list,       # List of Event objects
+    neuron=s.neurons[0],     # Neuron to plot (defaults to first)
+    events=s.events,        # List of Event objects (defaults to all)
     epoch_window=(-0.5, 1.0),      # 500ms before to 1000ms after event
     bin_size=0.04,           # 40ms bins
     title="Peri-Event Time Histogram (PETH) with Raster Plots for Touch Pressure Events", # Add a custom title

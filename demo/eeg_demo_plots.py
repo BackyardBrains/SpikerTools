@@ -2,58 +2,46 @@ from spikertools import Session
 
 # Paths to EEG data files
 p300_wav_file = 'data/eeg/p300/BYB_Recording_2019-06-11_13.23.58.wav'
-alpha_wave_wav_file = 'data/eeg/alpha_wave/BYB_Recording_2015-07-26_21.47.25.wav'
-
-# Channel configurations
-p300_channel_index = 0  # Using channel 0 for P300
-alpha_channel_index = 0  # Using channel 0 for Alpha Wave
-p300_channel_name = 'P4'
-alpha_channel_name = 'Ch0'
 
 # --- Plotting P300 Session Overview ---
 
 print("=== Plotting P300 Session Overview ===")
 
 # Initialize the P300 EEG session
-p300_session = Session(p300_wav_file)
+s = Session(p300_wav_file)
 
-# Define events for P300
-p300_session.events[0].name = 'standard'
-p300_session.events[0].color = 'blue'
+# Define events for P300 (default is '1' and '2') and add colors
+s.events[0].name = 'standard'
+s.events[0].color = 'blue'
 
-p300_session.events[1].name = 'oddball'
-p300_session.events[1].color = 'red'
+s.events[1].name = 'oddball'
+s.events[1].color = 'red'
 
-# Assign name to the P300 channel
-p300_session.channels[p300_channel_index].name = p300_channel_name
+# Assign location as name to the P300 channel (Optional)
+s.channels[0].name = 'P4'
 
 # Optional: Filter the P300 channel to reduce high frequency noise
-p300_session.channels[p300_channel_index].filter(ftype='lp', cutoff=5, order=3)
+s.channels[0].filter(ftype='lp', cutoff=10, order=3)
 
 # --- Plotting EEG Traces Around Events (2 Minutes) ---
 
-print("\n=== Plotting EEG Traces Around Events (2 Minutes) ===")
-p300_session.plots.plot_channels(
-    channels = p300_session.channels,
-    time_window=(0, 120),  # 2 minutes window
-    save_path=None,
-    title="2m of EEG Traces and Events",
-    show=True
+print("\n=== Plotting 30s EEG Traces at Arbitrary start of 10s ===")
+s.plots.plot_channels(
+    time_window=(10, 40),  # 2 minutes window
+    title="30s of EEG Traces and Events"
 )
 
 # --- Plotting Event-Related Potentials (ERP) for P300 ---
 print("\n=== Plotting Event-Related Potentials (ERP) ===")
 
 # Plot ERP for 'standard' and 'oddball' events
-p300_session.plots.plot_erp(
-    events = p300_session.events,
+s.plots.plot_erp(
     epoch_window=(-0.5, 1.0),  # 500ms before to 1000ms after event
-    channel = p300_session.channels[p300_channel_index],
-    save_path=None,
-    show=True
 )
 
-# --- Plotting Power Spectral Density (PSD) for Alpha Wave ---
+# Wave Based Analysis - Using Alpha Wave
+
+alpha_wave_wav_file = 'data/eeg/alpha_wave/BYB_Recording_2015-07-26_21.47.25.wav'
 
 print("\n=== Plotting Power Spectral Density (PSD) for Alpha Wave ===")
 
@@ -68,10 +56,10 @@ alpha_session.events[1].name = 'Open'
 alpha_session.events[1].color = 'orange'
 
 # Assign name to the Alpha Wave channel
-alpha_session.channels[alpha_channel_index].name = alpha_channel_name
+alpha_session.channels[0].name = 'O1'
 
 # Optional: Filter the Alpha Wave channel to isolate the alpha band (8-12 Hz)
-alpha_session.channels[alpha_channel_index].filter(ftype='bp', cutoff=[8, 12], order=3)  # Alpha band
+alpha_session.channels[0].filter(ftype='bp', cutoff=[8, 12], order=3)  # Alpha band
 
 # --- Plotting Spectrogram for Alpha Wave (First 30 Seconds) ---
 

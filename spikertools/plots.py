@@ -367,8 +367,8 @@ class Plots:
         Plots the Peri-Event Time Histogram (PETH) with Raster Plot for the specified neuron and events.
         
         Parameters:
-        - neuron (Neuron, optional): The neuron object to plot spikes for. Defaults to first neuron.
-        - events (list of Event, optional): List of event objects to align spikes to. Defaults to all events.
+        - neuron (Neuron, optional): The neuron object to plot spikes for. Defaults to the first neuron in the session.
+        - events (list of Event, optional): List of Event objects to align spikes to. Defaults to all events in the session.
         - epoch_window (tuple): Time window around the event (start, end) in seconds.
         - bin_size (float): Size of each histogram bin in seconds.
         - title (str, optional): Title of the PETH plot. If None, a default title is used.
@@ -378,6 +378,16 @@ class Plots:
         Returns:
         - None
         """
+        # Use all events if none are provided
+        if events is None:
+            events = self.session.events
+            self.logger.info("No events specified. Using all events in the session.")
+
+        # Exit gracefully if there are still no events
+        if not events:
+            self.logger.warning("No events available for PETH plot. Exiting the method.")
+            return
+
         # Default assignments
         if neuron is None:
             if not self.session.neurons:
@@ -385,19 +395,16 @@ class Plots:
                 return
             neuron = self.session.neurons[0]
             self.logger.info("No neuron specified. Using the first neuron in the session.")
-        
-        if events is None:
-            events = self.session.events
-            self.logger.info("No events specified. Using all events in the session.")
-        
+
+        # If events is still empty after defaulting
         if not events:
-            self.logger.error("No events provided for PETH plotting.")
+            self.logger.warning("No events provided for PETH plotting after defaulting. Exiting the method.")
             return
-        
+
         # Initialize figure with two subplots: PETH and Raster
         fig, (ax_peth, ax_raster) = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
                                                 gridspec_kw={'height_ratios': [1, 2]})
-        
+
         # Plot PETH
         for event in events:
             # Align spikes relative to the event
@@ -407,21 +414,21 @@ class Plots:
                 # Select spikes within the window
                 spikes_in_window = aligned[(aligned >= epoch_window[0]) & (aligned <= epoch_window[1])]
                 aligned_spikes.extend(spikes_in_window)
-            
+
             if not aligned_spikes:
                 self.logger.warning(f"No spikes found for event '{event.name}' within the specified window.")
                 continue
-            
+
             # Create histogram bins
             bins = np.arange(epoch_window[0], epoch_window[1] + bin_size, bin_size)
             counts, _ = np.histogram(aligned_spikes, bins=bins)
-            
+
             # Normalize to firing rate (spikes per second)
             firing_rate = counts / (len(event.timestamps) * bin_size)
-            
+
             # Plot as stairs
             ax_peth.step(bins[:-1], firing_rate, where='post', label=event.name, color=event.color)
-        
+
         # Customize PETH plot
         ax_peth.set_ylabel('Firing Rate (Hz)')
         if title:
@@ -430,7 +437,7 @@ class Plots:
             ax_peth.set_title('Peri-Event Time Histogram (PETH)')
         ax_peth.legend()
         ax_peth.grid(True)
-        
+
         # Plot Raster
         y_ticks = []
         y_labels = []
@@ -443,16 +450,16 @@ class Plots:
                                   marker='|', color=event.color, s=100)
             y_ticks.append(idx * len(event.timestamps) + len(event.timestamps)/2 - 0.5)
             y_labels.append(event.name)
-        
+
         ax_raster.set_yticks(y_ticks)
         ax_raster.set_yticklabels(y_labels)
         ax_raster.set_xlabel('Time relative to event (s)')
         ax_raster.set_ylabel('Events')
         ax_raster.grid(True)
-        
+
         # Tight layout
         plt.tight_layout()
-        
+
         # Save or show plot
         if save_path:
             plt.savefig(save_path, bbox_inches='tight')
@@ -517,14 +524,24 @@ class Plots:
         Plots Event-Related Potentials (ERP) for specified events.
         
         Parameters:
-        - events (list of Event): List of Event objects to plot ERP for.
+        - events (list of Event, optional): List of Event objects to plot ERP for. Defaults to all events in the session.
         - epoch_window (tuple): Relative time window around each event (start, end) in seconds.
         - channel (Channel): Channel object to analyze.
         - title (str): Title of the ERP plot.
         - save_path (str): Path to save the plot.
         - show (bool): Whether to display the plot.
         """
-         # Check if channel is None
+        # Use all events if none are provided
+        if events is None:
+            events = self.session.events
+            self.logger.info("No events specified. Using all events in the session.")
+
+        # Exit gracefully if there are still no events
+        if not events:
+            self.logger.warning("No events available for ERP plot. Exiting the method.")
+            return
+
+        # Check if channel is None
         if channel is None:
             self.logger.warning("No channel specified for ERP plot, using first channel.")
             channel = self.session.channels[0]
@@ -537,17 +554,16 @@ class Plots:
             else:
                 self.logger.warning("Too many channels specified, using first channel.")
                 channel = channel[0]
-        
+
         sample_rate = channel.sample_rate
         pre_samples = int(abs(epoch_window[0]) * sample_rate)
         post_samples = int(epoch_window[1] * sample_rate)
         epoch_length = pre_samples + post_samples
         time_axis = np.linspace(epoch_window[0], epoch_window[1], epoch_length)
- 
+
         plt.figure(figsize=(12, 6))
-        
+
         for event in events:
-    
             epochs = []
             for timestamp in event.timestamps:
                 idx = int(timestamp * sample_rate)
@@ -562,7 +578,7 @@ class Plots:
             # Average across epochs
             erp = np.mean(epochs, axis=0)
             plt.plot(time_axis, erp, label=event.name, color=event.color)
- 
+
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
         if title:

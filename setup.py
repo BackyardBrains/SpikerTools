@@ -10,6 +10,7 @@ setup(
         'numpy',
         'scipy',
         'matplotlib',
+        'seaborn',
         # Add other dependencies as needed
     ],
     include_package_data=True,

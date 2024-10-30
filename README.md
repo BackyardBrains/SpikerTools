@@ -44,7 +44,7 @@ pip install spikertools
 Note: If SpikerTools is not yet available on PyPI, you can install it directly from the source code:
 
 ```bash
-git clone https://github.com/yourusername/SpikerTools.git
+git clone https://github.com/BackyardBrains/SpikerTools.git
 cd SpikerTools
 pip install .
 ```

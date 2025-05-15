@@ -228,7 +228,7 @@ class Channel:
         if n < 1:
             raise ValueError("n must be >= 1")
         kernel = np.ones(n) / n
-        self.data = np.convolve(self.data, kernel, mode='same')
+        self.data = np.convolve(self.data, kernel, mode='valid')
         return self
 
 class Event:

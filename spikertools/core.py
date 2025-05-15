@@ -217,6 +217,20 @@ class Channel:
     def std(self):
         return np.std(self.data)
 
+    def smooth(self, n=5):
+        """
+        Smooth the channel data using a moving average filter over n samples.
+        Args:
+            n (int): Number of samples for the moving average window.
+        Returns:
+            self: The Channel object with smoothed data.
+        """
+        if n < 1:
+            raise ValueError("n must be >= 1")
+        kernel = np.ones(n) / n
+        self.data = np.convolve(self.data, kernel, mode='same')
+        return self
+
 class Event:
     def __init__(self, name, timestamps=None, color='k'):
         self.name = name

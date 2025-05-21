@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import logging
 import seaborn as sns  # Import seaborn
-from .core import Event  # Import Event from core directly
+from spikertools.models import Event  # Import Event from models
    
 # Set global plot style using seaborn
 sns.set_style('whitegrid')  # Use seaborn's 'whitegrid' style

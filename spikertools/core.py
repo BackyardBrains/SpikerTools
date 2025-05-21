@@ -1,8 +1,9 @@
 # spikertools/core.py
 
+from spikertools.models import Event, Neuron, Channel, Session, Events
+from spikertools.plots import Plots
 import numpy as np
 from scipy.io import wavfile
-from spikertools.plots import Plots
 import os
 import re
 from datetime import datetime
@@ -229,29 +230,6 @@ class Channel:
         kernel = np.ones(n) / n
         self.data = np.convolve(self.data, kernel, mode='valid')
         return self
-
-class Event:
-    def __init__(self, name, timestamps=None, color='k'):
-        self.name = name
-        self.timestamps = timestamps or []
-        self.color = color
-
-    def __repr__(self):
-        return self.name
-
-    def __str__(self):
-        return self.name
-
-    def inter_event_intervals(self):
-        if len(self.timestamps) < 2:
-            return []
-        return np.diff(sorted(self.timestamps))
-
-    def event_rate(self):
-        if len(self.timestamps) < 2:
-            return np.nan
-        total_time = self.timestamps[-1] - self.timestamps[0]
-        return len(self.timestamps) / total_time if total_time > 0 else np.nan
 
 class Events:
     """A container class for Event objects that supports both numeric indexing and name-based lookup."""

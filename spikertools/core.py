@@ -265,8 +265,10 @@ class Events:
             return self._events[key]
         elif isinstance(key, str):
             return self._name_map[key]
+        elif isinstance(key, slice):
+            return self._events[key]
         else:
-            raise KeyError("Invalid key type. Use int or str.")
+            raise KeyError("Invalid key type. Use int, str, or slice.")
     
     def __len__(self):
         return len(self._events)

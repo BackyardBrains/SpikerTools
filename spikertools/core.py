@@ -287,6 +287,64 @@ class Events:
         self._events.append(event)
         self._name_map[event.name] = event
 
+    def get_timestamps(self, names):
+        """
+        Get all timestamps from events with the specified names.
+        
+        Parameters:
+        - names: Can be a single event name or a list/set of event names
+        
+        Returns:
+        - List of timestamps from all matching events
+        """
+        if isinstance(names, str):
+            names = {names}
+        elif isinstance(names, (list, tuple)):
+            names = set(names)
+            
+        timestamps = []
+        for name in names:
+            if name in self._name_map:
+                timestamps.extend(self._name_map[name].timestamps)
+        return sorted(timestamps)
+
+    def rename(self, old_name, new_name):
+        """
+        Rename an event while preserving its data.
+        
+        Parameters:
+        - old_name: Current name of the event
+        - new_name: New name for the event
+        """
+        if old_name not in self._name_map:
+            raise KeyError(f"Event '{old_name}' not found")
+        if new_name in self._name_map:
+            raise KeyError(f"Event '{new_name}' already exists")
+            
+        event = self._name_map[old_name]
+        event.name = new_name
+        del self._name_map[old_name]
+        self._name_map[new_name] = event
+
+    def create_event(self, name, timestamps, color='k'):
+        """
+        Create a new event with the given name and timestamps.
+        
+        Parameters:
+        - name: Name for the new event
+        - timestamps: List of timestamps for the event
+        - color: Color for the event (default: 'k' for black)
+        
+        Returns:
+        - The newly created Event object
+        """
+        if name in self._name_map:
+            raise KeyError(f"Event '{name}' already exists")
+            
+        event = Event(name, timestamps=timestamps, color=color)
+        self.append(event)
+        return event
+
 class Neuron:
     def __init__(self, name, timestamps=None, color='k'):
         self.name = name

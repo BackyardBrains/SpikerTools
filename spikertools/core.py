@@ -24,7 +24,7 @@ class Session:
         print(f"Looking for events file: {events_file}")
 
         # Initialize events and neurons before loading
-        self.events = []
+        self.events = Events([])  # Changed from list to Events
         self.neurons = []
 
         # Initialize the Plots class
@@ -72,10 +72,9 @@ class Session:
             color = color_map[name]
 
         # Check if event already exists
-        for event in self.events:
-            if event.name == name:
-                event.timestamps.append(timestamp)
-                return
+        if self.events.has_event(name):
+            self.events[name].timestamps.append(timestamp)
+            return
         
         # Handle threshold events for neurons
         if 'thresh' in name.lower():
@@ -253,6 +252,40 @@ class Event:
             return np.nan
         total_time = self.timestamps[-1] - self.timestamps[0]
         return len(self.timestamps) / total_time if total_time > 0 else np.nan
+
+class Events:
+    """A container class for Event objects that supports both numeric indexing and name-based lookup."""
+    
+    def __init__(self, events):
+        self._events = list(events)
+        self._name_map = {event.name: event for event in events}
+    
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._events[key]
+        elif isinstance(key, str):
+            return self._name_map[key]
+        else:
+            raise KeyError("Invalid key type. Use int or str.")
+    
+    def __len__(self):
+        return len(self._events)
+    
+    def __iter__(self):
+        return iter(self._events)
+    
+    def names(self):
+        """Returns a list of all event names."""
+        return list(self._name_map.keys())
+    
+    def has_event(self, name):
+        """Checks if an event with the given name exists."""
+        return name in self._name_map
+    
+    def append(self, event):
+        """Adds a new event to the collection."""
+        self._events.append(event)
+        self._name_map[event.name] = event
 
 class Neuron:
     def __init__(self, name, timestamps=None, color='k'):

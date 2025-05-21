@@ -541,19 +541,41 @@ class Plots:
         Plots Event-Related Potentials (ERP) for specified events.
         
         Parameters:
-        - events (list of Event, optional): List of Event objects to plot ERP for. Defaults to all events in the session.
+        - events: Can be:
+            - A single Event object
+            - A list of Event objects
+            - A string event name
+            - A list of event names
+            - None (uses all events in the session)
         - epoch_window (tuple): Relative time window around each event (start, end) in seconds.
         - channel (Channel): Channel object to analyze.
         - title (str): Title of the ERP plot.
         - save_path (str): Path to save the plot.
         - show (bool): Whether to display the plot.
         """
-        # Use all events if none are provided
+        # Convert events to a list of Event objects
         if events is None:
             events = self.session.events
-            self.logger.info("No events specified. Using all events in the session.")
+        elif isinstance(events, str):
+            events = [self.session.events[events]]
+        elif isinstance(events, Event):
+            events = [events]
+        elif isinstance(events, (list, tuple)):
+            # Handle list of event names or Event objects
+            processed_events = []
+            for e in events:
+                if isinstance(e, str):
+                    processed_events.append(self.session.events[e])
+                elif isinstance(e, Event):
+                    processed_events.append(e)
+                else:
+                    self.logger.warning(f"Invalid event type: {type(e)}. Skipping.")
+            events = processed_events
+        else:
+            self.logger.warning(f"Invalid events type: {type(events)}. Using all events.")
+            events = self.session.events
 
-        # Exit gracefully if there are still no events
+        # Exit gracefully if there are no events
         if not events:
             self.logger.warning("No events available for ERP plot. Exiting the method.")
             return

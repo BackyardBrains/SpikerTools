@@ -179,11 +179,28 @@ class Channels:
         if isinstance(key, int):
             return self._channels[key]
         elif isinstance(key, str):
+            if key not in self._name_map:
+                raise KeyError(f"Channel with name '{key}' not found.")
             return self._name_map[key]
         elif isinstance(key, slice):
             return self._channels[key]
+        elif isinstance(key, (list, tuple)): # New condition
+            selected_channels = []
+            missing_keys = []
+            for name_key in key:
+                if isinstance(name_key, str) and name_key in self._name_map:
+                    selected_channels.append(self._name_map[name_key])
+                else:
+                    # Collect all invalid/missing keys to report them
+                    missing_keys.append(name_key)
+            
+            if missing_keys:
+                # If any keys were not found or were not strings, raise an error
+                raise KeyError(f"One or more channel names not found or invalid: {missing_keys}")
+            
+            return selected_channels # Return a list of the selected Channel objects
         else:
-            raise KeyError("Invalid key type. Use int, str, or slice.")
+            raise TypeError(f"Invalid key type '{type(key)}'. Use int, str, slice, or a list/tuple of strings.")
     
     def __len__(self):
         return len(self._channels)

@@ -57,14 +57,33 @@ class Channel:
         self.data = data  # NumPy array
         self.sample_rate = sample_rate
         self.number = number
-        self.name = name or f'Channel {number}'
+        self._name = name or f'Channel {number}'
         self.color = color
         self.filters_applied = []
+        self._container = None  # Reference to the Channels container
 
         if self.sample_rate:
             self._t = np.arange(0, len(self.data) / self.sample_rate, 1 / self.sample_rate)
         else:
             self._t = np.arange(len(self.data))
+
+    @property
+    def name(self):
+        return self._name
+
+    @name.setter
+    def name(self, new_name):
+        if self._name == new_name:
+            return # No change needed
+
+        old_name = self._name
+        if self._container:
+            # Ask the container to validate and perform the rename in its map
+            # This will raise an error if new_name is invalid (e.g., duplicate)
+            self._container._request_rename_channel(self, old_name, new_name)
+        
+        # If the container part was successful (or no container), update the internal name
+        self._name = new_name
 
     @property
     def time(self):
@@ -139,10 +158,22 @@ class Channel:
 class Channels:
     """A container class for Channel objects that supports both numeric indexing and name-based lookup."""
     
-    def __init__(self, channels):
-        self._channels = list(channels)
-        self._name_map = {channel.name: channel for channel in channels}
-        self._number_map = {channel.number: channel for channel in channels}
+    def __init__(self, channels_list): # Changed param name for clarity
+        self._channels = []
+        self._name_map = {}
+        self._number_map = {}
+        for channel_obj in list(channels_list): # Iterate over a copy
+            channel_obj._container = self # Set container reference
+            
+            # Validate name and number uniqueness during initialization
+            if channel_obj.name in self._name_map: # .name uses property getter
+                raise ValueError(f"Duplicate channel name '{channel_obj.name}' during initialization.")
+            if channel_obj.number in self._number_map:
+                raise ValueError(f"Duplicate channel number {channel_obj.number} during initialization.")
+
+            self._channels.append(channel_obj)
+            self._name_map[channel_obj.name] = channel_obj
+            self._number_map[channel_obj.number] = channel_obj
     
     def __getitem__(self, key):
         if isinstance(key, int):
@@ -178,27 +209,64 @@ class Channels:
     
     def append(self, channel):
         """Adds a new channel to the collection."""
+        if channel.name in self._name_map:
+            raise KeyError(f"Channel with name '{channel.name}' already exists.")
+        if channel.number in self._number_map:
+            raise KeyError(f"Channel number {channel.number} already exists.")
+        
         self._channels.append(channel)
         self._name_map[channel.name] = channel
         self._number_map[channel.number] = channel
+        channel._container = self  # Set the container reference
 
-    def rename(self, old_name, new_name):
+    def rename(self, old_name_key: str, new_name: str):
         """
         Rename a channel while preserving its data.
         
         Parameters:
-        - old_name: Current name of the channel
+        - old_name_key: Current name of the channel
         - new_name: New name for the channel
         """
-        if old_name not in self._name_map:
-            raise KeyError(f"Channel '{old_name}' not found")
-        if new_name in self._name_map:
-            raise KeyError(f"Channel '{new_name}' already exists")
-            
-        channel = self._name_map[old_name]
-        channel.name = new_name
-        del self._name_map[old_name]
-        self._name_map[new_name] = channel
+        if old_name_key not in self._name_map:
+            raise KeyError(f"Channel '{old_name_key}' not found for renaming.")
+        
+        channel_to_rename = self._name_map[old_name_key]
+        # This assignment will trigger the Channel's name.setter property
+        channel_to_rename.name = new_name
+
+    def _request_rename_channel(self, channel_obj, old_name_in_channel, new_name_proposed):
+        """
+        Called by a Channel's name setter to update the container's map.
+        Validates new_name_proposed and updates the internal _name_map.
+        """
+        # Ensure the channel_obj is indeed managed by this container under old_name_in_channel
+        if old_name_in_channel not in self._name_map or self._name_map[old_name_in_channel] is not channel_obj:
+            # This indicates an inconsistency, or the channel isn't properly in this container under that old name.
+            # It might be a new channel whose name is being set after default initialization,
+            # and old_name_in_channel was its default (e.g., "Channel 0").
+            # If old_name_in_channel is not in the map, there's nothing to pop for it.
+            # If it is in the map but points to a different object, that's a bigger issue.
+            # For simplicity, we assume if old_name_in_channel is in the map, it must be channel_obj.
+             if old_name_in_channel in self._name_map and self._name_map[old_name_in_channel] is not channel_obj:
+                raise RuntimeError(
+                    f"Internal inconsistency: Channel's reported old name '{old_name_in_channel}' "
+                    f"is mapped to a different channel object in the container."
+                )
+            # If old_name_in_channel is not in _name_map, proceed to check new_name_proposed.
+            # Nothing to pop for old_name_in_channel.
+
+        # Check if new_name_proposed is already taken by *another* channel
+        if new_name_proposed in self._name_map and self._name_map[new_name_proposed] is not channel_obj:
+            raise KeyError(
+                f"Cannot rename to '{new_name_proposed}': name already used by a different channel."
+            )
+
+        # Perform the update in the map
+        if old_name_in_channel in self._name_map and self._name_map[old_name_in_channel] is channel_obj:
+            self._name_map.pop(old_name_in_channel)
+        
+        self._name_map[new_name_proposed] = channel_obj
+        # The channel_obj._name will be updated by its own setter after this method returns successfully.
 
     def create_channel(self, data, sample_rate, number, name=None, color='k'):
         """

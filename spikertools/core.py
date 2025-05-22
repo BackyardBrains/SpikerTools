@@ -1,6 +1,6 @@
 # spikertools/core.py
 
-from spikertools.models import Event, Neuron, Channel, Session, Events
+from spikertools.models import Event, Neuron, Channel, Session, Events, Channels
 from spikertools.plots import Plots
 import numpy as np
 from scipy.io import wavfile
@@ -124,7 +124,7 @@ class Session:
 
     def _initialize_channels(self):
         # Initialize channels based on the data
-        channels = []
+        channels = Channels([])  # Initialize empty Channels container
         if self.data.ndim == 1:
             channel = Channel(self.data, sample_rate=self.sample_rate, number=0)
             channels.append(channel)

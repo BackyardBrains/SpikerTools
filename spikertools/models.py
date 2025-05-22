@@ -136,6 +136,96 @@ class Channel:
         self.data = np.convolve(self.data, kernel, mode='valid')
         return self
 
+class Channels:
+    """A container class for Channel objects that supports both numeric indexing and name-based lookup."""
+    
+    def __init__(self, channels):
+        self._channels = list(channels)
+        self._name_map = {channel.name: channel for channel in channels}
+        self._number_map = {channel.number: channel for channel in channels}
+    
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._channels[key]
+        elif isinstance(key, str):
+            return self._name_map[key]
+        elif isinstance(key, slice):
+            return self._channels[key]
+        else:
+            raise KeyError("Invalid key type. Use int, str, or slice.")
+    
+    def __len__(self):
+        return len(self._channels)
+    
+    def __iter__(self):
+        return iter(self._channels)
+    
+    def names(self):
+        """Returns a list of all channel names."""
+        return list(self._name_map.keys())
+    
+    def numbers(self):
+        """Returns a list of all channel numbers."""
+        return list(self._number_map.keys())
+    
+    def has_channel(self, name):
+        """Checks if a channel with the given name exists."""
+        return name in self._name_map
+    
+    def has_channel_number(self, number):
+        """Checks if a channel with the given number exists."""
+        return number in self._number_map
+    
+    def append(self, channel):
+        """Adds a new channel to the collection."""
+        self._channels.append(channel)
+        self._name_map[channel.name] = channel
+        self._number_map[channel.number] = channel
+
+    def rename(self, old_name, new_name):
+        """
+        Rename a channel while preserving its data.
+        
+        Parameters:
+        - old_name: Current name of the channel
+        - new_name: New name for the channel
+        """
+        if old_name not in self._name_map:
+            raise KeyError(f"Channel '{old_name}' not found")
+        if new_name in self._name_map:
+            raise KeyError(f"Channel '{new_name}' already exists")
+            
+        channel = self._name_map[old_name]
+        channel.name = new_name
+        del self._name_map[old_name]
+        self._name_map[new_name] = channel
+
+    def create_channel(self, data, sample_rate, number, name=None, color='k'):
+        """
+        Create a new channel with the given parameters.
+        
+        Parameters:
+        - data: Channel data array
+        - sample_rate: Sample rate of the channel
+        - number: Channel number
+        - name: Name for the channel (default: 'Channel {number}')
+        - color: Color for the channel (default: 'k' for black)
+        
+        Returns:
+        - The newly created Channel object
+        """
+        if name is None:
+            name = f'Channel {number}'
+            
+        if name in self._name_map:
+            raise KeyError(f"Channel '{name}' already exists")
+        if number in self._number_map:
+            raise KeyError(f"Channel number {number} already exists")
+            
+        channel = Channel(data=data, sample_rate=sample_rate, number=number, name=name, color=color)
+        self.append(channel)
+        return channel
+
 class Events:
     """A container class for Event objects that supports both numeric indexing and name-based lookup."""
     
@@ -352,7 +442,7 @@ class Session:
                 channel_data = self.data[:, i]
                 channel = Channel(channel_data, sample_rate=self.sample_rate, number=i)
                 channels.append(channel)
-        return channels
+        return Channels(channels)  # Return Channels container instead of list
 
     def _extract_datetime(self):
         # Extract datetime from the filename

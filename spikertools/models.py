@@ -433,7 +433,7 @@ class Session:
 
     def _initialize_channels(self):
         # Initialize channels based on the data
-        channels = []
+        channels = Channels([])  # Initialize empty Channels container
         if self.data.ndim == 1:
             channel = Channel(self.data, sample_rate=self.sample_rate, number=0)
             channels.append(channel)
@@ -442,7 +442,7 @@ class Session:
                 channel_data = self.data[:, i]
                 channel = Channel(channel_data, sample_rate=self.sample_rate, number=i)
                 channels.append(channel)
-        return Channels(channels)  # Return Channels container instead of list
+        return channels
 
     def _extract_datetime(self):
         # Extract datetime from the filename

@@ -164,5 +164,29 @@ class TestNeuron(unittest.TestCase):
         rate = self.neuron.firing_rate()
         self.assertEqual(rate, 3 / (1.1 - 0.2))
 
+
+class TestDebounce(unittest.TestCase):
+
+    def test_event_debounce(self):
+        event = Event('deb', timestamps=[0.0, 0.01, 0.02, 0.05])
+        event.debounce(0.015)
+        self.assertEqual(event.timestamps, [0.02, 0.05])
+
+    def test_events_debounce(self):
+        e1 = Event('a', timestamps=[0, 0.005, 0.011])
+        e2 = Event('b', timestamps=[0.1, 0.12])
+        evts = Events([e1, e2])
+        evts.debounce(0.01)
+        self.assertEqual(e1.timestamps, [0.011])
+        self.assertEqual(e2.timestamps, [0.12])
+
+    def test_events_cross_debouce(self):
+        e1 = Event('a', timestamps=[0.0, 0.03])
+        e2 = Event('b', timestamps=[0.02])
+        evts = Events([e1, e2])
+        evts.cross_debouce(0.015)
+        self.assertEqual(e1.timestamps, [0.0, 0.03])
+        self.assertEqual(e2.timestamps, [])
+
 if __name__ == '__main__':
     unittest.main()

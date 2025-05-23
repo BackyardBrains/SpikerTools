@@ -27,6 +27,39 @@ class Event:
         total_time = self.timestamps[-1] - self.timestamps[0]
         return len(self.timestamps) / total_time if total_time > 0 else np.nan
 
+    def debounce(self, time_window):
+        """Remove events that occur within ``time_window`` seconds of a later event.
+
+        Parameters
+        ----------
+        time_window : float
+            Minimum time between events **in seconds**. Timestamps closer than
+            this are considered spurious; only the last timestamp in each
+            cluster is kept.
+
+        Returns
+        -------
+        Event
+            The Event instance (for chaining).
+        """
+
+        if not self.timestamps:
+            return self
+
+        sorted_ts = sorted(self.timestamps)
+        debounced = []
+        current = sorted_ts[0]
+        for ts in sorted_ts[1:]:
+            if ts - current <= time_window:
+                # within debounce window; keep the later timestamp
+                current = ts
+            else:
+                debounced.append(current)
+                current = ts
+        debounced.append(current)
+        self.timestamps = debounced
+        return self
+
 class Neuron:
     def __init__(self, name, timestamps=None, color='k'):
         self.name = name
@@ -346,6 +379,70 @@ class Events:
         """Adds a new event to the collection."""
         self._events.append(event)
         self._name_map[event.name] = event
+
+    def debounce(self, time_window):
+        """Debounce all events in the container.
+
+        Parameters
+        ----------
+        time_window : float
+            Minimum time between events for each ``Event`` in **seconds**. See
+            :meth:`Event.debounce`.
+
+        Returns
+        -------
+        Events
+            The container itself for chaining.
+        """
+
+        for event in self._events:
+            event.debounce(time_window)
+        return self
+
+    def cross_debouce(self, time_window):
+        """Debounce events across all event categories.
+
+        Parameters
+        ----------
+        time_window : float
+            Time window in **seconds** within which multiple events are
+            considered duplicates.
+
+        Returns
+        -------
+        Events
+            The container itself for chaining.
+        """
+
+        # Gather all (timestamp, event) pairs
+        pairs = []
+        for event in self._events:
+            for ts in event.timestamps:
+                pairs.append((ts, event))
+
+        # Sort all timestamps globally
+        pairs.sort(key=lambda x: x[0])
+
+        kept = []
+        for ts, ev in pairs:
+            if not kept:
+                kept.append((ts, ev))
+            else:
+                if ts - kept[-1][0] <= time_window:
+                    # replace the last kept timestamp with the newer one
+                    kept[-1] = (ts, ev)
+                else:
+                    kept.append((ts, ev))
+
+        # Reset timestamps and populate with kept values
+        by_event = {event: [] for event in self._events}
+        for ts, ev in kept:
+            by_event[ev].append(ts)
+
+        for event in self._events:
+            event.timestamps = sorted(by_event.get(event, []))
+
+        return self
 
     def get_timestamps(self, names):
         """

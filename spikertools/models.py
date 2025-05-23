@@ -399,7 +399,7 @@ class Events:
             event.debounce(time_window)
         return self
 
-    def cross_debouce(self, time_window):
+    def cross_debounce(self, time_window):
         """Debounce events across all event categories.
 
         Parameters

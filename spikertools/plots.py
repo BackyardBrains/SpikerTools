@@ -260,7 +260,7 @@ class Plots:
          else:
              plt.close()
 
-    def plot_epochs(self, event=None, epoch_window=(-0.5, 1.0), channel=None, spacing=None, save_path=None, show=True):
+    def plot_epochs(self, event=None, epoch_window=(-0.5, 1.0), channel=None, spacing=None, save_path=None, show=True, outlier_threshold=None):
         """
         Plots individual epochs of the channel data around specified events.
         
@@ -272,6 +272,8 @@ class Plots:
           (default), the standard deviation of the entire channel is used.
         - save_path (str): Path to save the plot.
         - show (bool): Whether to display the plot.
+        - outlier_threshold (float, optional): Threshold for removing outliers (distance from channel mean). If ``None``
+          (default), all epochs are plotted.
         """
         
         if event is None:
@@ -308,8 +310,11 @@ class Plots:
                 continue
             epoch = channel.data[start_idx:end_idx]
 
-            if not (np.any(epoch - np.mean(epoch) > 3 * channel.std)):
+            if outlier_threshold is None:
                 epochs.append(epoch)
+            else:
+                if not (np.any(epoch - np.mean(epoch) > outlier_threshold)):
+                    epochs.append(epoch)
         if not epochs:
             self.logger.warning("No epochs to plot.")
             return

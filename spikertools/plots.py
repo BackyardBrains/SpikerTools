@@ -260,7 +260,7 @@ class Plots:
          else:
              plt.close()
 
-    def plot_epochs(self, event=None, epoch_window=(-0.5, 1.0), channel=None, save_path=None, show=True):
+    def plot_epochs(self, event=None, epoch_window=(-0.5, 1.0), channel=None, spacing=None, save_path=None, show=True):
         """
         Plots individual epochs of the channel data around specified events.
         
@@ -268,6 +268,8 @@ class Plots:
         - event (Event): Event to plot.
         - epoch_window (tuple): Time window around the event (pre, post) in seconds.
         - channel (Channel): Channel to analyze.
+        - spacing (float, optional): Vertical offset between epochs. If ``None``
+          (default), the standard deviation of the entire channel is used.
         - save_path (str): Path to save the plot.
         - show (bool): Whether to display the plot.
         """
@@ -310,9 +312,14 @@ class Plots:
             self.logger.warning("No epochs to plot.")
             return
 
+        if spacing is None:
+            spacing_value = np.std(channel.data)
+        else:
+            spacing_value = spacing
+
         plt.figure(figsize=(10, 6))
         for i, epoch in enumerate(epochs):
-            plt.plot(time_axis, epoch + i * np.std(epoch), color=channel.color)
+            plt.plot(time_axis, epoch + i * spacing_value, color=channel.color)
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
         plt.title(f'Epochs around event "{event.name}"')

@@ -67,7 +67,9 @@ class TestPlotting(unittest.TestCase):
 
     def test_plot_epochs(self):
         try:
-            self.session.plots.plot_epochs(event_name='1', channel_index=0, show=False)
+            event = next(e for e in self.session.events if e.name == '1')
+            channel = self.session.channels[0]
+            self.session.plots.plot_epochs(event=event, channel=channel, show=False)
         except Exception as e:
             self.fail(f'plot_epochs raised an exception: {e}')
 

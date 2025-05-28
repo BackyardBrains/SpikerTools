@@ -330,7 +330,7 @@ class Plots:
         plt.xlabel('Time (s)')
         plt.ylabel('Amplitude')
         plt.title(f'Epochs around event "{event.name}"')
-        plt.axvline(x=0, color='gray', linestyle='--', label='Event Onset')
+        plt.axvline(x=0, color='black', linestyle='--', label='Event Onset')
         plt.tight_layout()
         if save_path:
             plt.savefig(save_path)

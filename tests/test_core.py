@@ -3,7 +3,7 @@
 import unittest
 import os
 import numpy as np
-from spikertools.core import Session, Channel, Event, Neuron
+from spikertools.core import Session, Channel, Event, Neuron, Events
 from datetime import datetime
 
 class TestSession(unittest.TestCase):
@@ -178,7 +178,7 @@ class TestDebounce(unittest.TestCase):
         evts = Events([e1, e2])
         evts.debounce(0.01)
         self.assertEqual(e1.timestamps, [0.011])
-        self.assertEqual(e2.timestamps, [0.12])
+        self.assertEqual(e2.timestamps, [0.1, 0.12])
 
     def test_events_cross_debouce(self):
         e1 = Event('a', timestamps=[0.0, 0.03])

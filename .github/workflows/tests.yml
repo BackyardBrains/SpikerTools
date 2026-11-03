@@ -1,0 +1,41 @@
+name: Python tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  nwb:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.12', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install -e '.[nwb]' pynwb==4.2.0 pytest build
+      - run: python -m pytest -q
+        env:
+          MPLBACKEND: Agg
+          PYTHONDONTWRITEBYTECODE: '1'
+      - run: python -m build
+  wav-only:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e . pytest
+      - run: python -c "import importlib.util; assert importlib.util.find_spec('pynwb') is None"
+      - run: python -m pytest -q tests/test_core.py tests/test_plotting.py
+        env:
+          MPLBACKEND: Agg
+          PYTHONDONTWRITEBYTECODE: '1'

@@ -15,6 +15,26 @@ plt.rcParams['font.size'] = 12
 plt.rcParams['axes.facecolor'] = 'white'
 plt.rcParams['figure.facecolor'] = 'white'
 
+def _amplitude_label(channels):
+    units = {getattr(channel, 'unit', None) for channel in channels}
+    if len(units) == 1 and None not in units:
+        return 'Amplitude ({})'.format(next(iter(units)))
+    return 'Amplitude'
+
+
+def _sample_index(channel, timestamp):
+    # Subtracting the NWB clock offset can leave a sample time just below an
+    # integer. Use its nearest sample, not truncation to the previous sample.
+    value = timestamp * channel.sample_rate
+    return int(round(value)) if hasattr(channel, 'unit') else int(value)
+
+
+def _power_label(channel, default):
+    if getattr(channel, 'unit', None) == 'volts':
+        return 'Power spectral density (dB re 1 V²/Hz)'
+    return default
+
+
 class Plots:
     def __init__(self, session):
         """
@@ -54,10 +74,10 @@ class Plots:
              # Extract data within the time window
              if time_window:
                  start_time, end_time = time_window
-                 start_idx = int(start_time * channel.sample_rate)
-                 end_idx = int(end_time * channel.sample_rate)
+                 start_idx = max(0, _sample_index(channel, start_time))
+                 end_idx = max(start_idx, min(len(channel.data), _sample_index(channel, end_time)))
                  data = channel.data[start_idx:end_idx]
-                 times = np.linspace(start_time, end_time, end_idx - start_idx)
+                 times = np.arange(start_idx, end_idx) / channel.sample_rate
              else:
                  data = channel.data
                  times = np.arange(len(data)) / channel.sample_rate
@@ -74,7 +94,7 @@ class Plots:
                      plt.axvline(x=timestamp, color=event.color, linestyle='--', alpha=0.7)
          
          plt.xlabel('Time (s)')
-         plt.ylabel('Amplitude')
+         plt.ylabel(_amplitude_label(channels))
          if title:
              plt.title(title)
          else:
@@ -163,7 +183,7 @@ class Plots:
             title = 'Spectrogram'
         plt.title(title)
 
-        plt.colorbar(label='Power/Frequency (dB/Hz)')
+        plt.colorbar(label=_power_label(channel, 'Power/Frequency (dB/Hz)'))
 
         # Plot event markers
         if events:
@@ -230,7 +250,7 @@ class Plots:
              
              epochs = []
              for timestamp in event.timestamps:
-                 idx = int(timestamp * sample_rate)
+                 idx = _sample_index(channel, timestamp)
                  start_idx = idx + start_samples
                  end_idx = idx + end_samples
                  if start_idx < 0 or end_idx > len(channel.data):
@@ -247,7 +267,7 @@ class Plots:
              plt.plot(f[freq_mask], 10 * np.log10(Pxx[freq_mask]), label=event.name, color=event.color)
  
          plt.xlabel('Frequency [Hz]')
-         plt.ylabel('Power Spectral Density (dB/Hz)')
+         plt.ylabel(_power_label(channel, 'Power Spectral Density (dB/Hz)'))
          plt.title('Average Power Spectrum')
          plt.legend()
          plt.grid(True)
@@ -296,12 +316,12 @@ class Plots:
         pre_samples = int(abs(epoch_window[0]) * sample_rate)
         post_samples = int(epoch_window[1] * sample_rate)
         epoch_length = pre_samples + post_samples
-        time_axis = np.linspace(epoch_window[0], epoch_window[1], epoch_length)
+        time_axis = np.arange(-pre_samples, post_samples) / sample_rate
 
         
         epochs = []
         for timestamp in event.timestamps:
-            idx = int(timestamp * sample_rate)
+            idx = _sample_index(channel, timestamp)
             start_idx = idx - pre_samples
             end_idx = idx + post_samples
             if start_idx < 0 or end_idx > len(channel.data):
@@ -321,7 +341,7 @@ class Plots:
         for i, epoch in enumerate(epochs):
             plt.plot(time_axis, epoch + i * spacing_value, color=channel.color)
         plt.xlabel('Time (s)')
-        plt.ylabel('Amplitude')
+        plt.ylabel(_amplitude_label([channel]))
         plt.title(f'Epochs around event "{event.name}"')
         plt.axvline(x=0, color='black', linestyle='--', label='Event Onset')
         plt.tight_layout()
@@ -606,14 +626,14 @@ class Plots:
         pre_samples = int(abs(epoch_window[0]) * sample_rate)
         post_samples = int(epoch_window[1] * sample_rate)
         epoch_length = pre_samples + post_samples
-        time_axis = np.linspace(epoch_window[0], epoch_window[1], epoch_length)
+        time_axis = np.arange(-pre_samples, post_samples) / sample_rate
 
         plt.figure(figsize=(12, 6))
 
         for event in events:
             epochs = []
             for timestamp in event.timestamps:
-                idx = int(timestamp * sample_rate)
+                idx = _sample_index(channel, timestamp)
                 start_idx = idx - pre_samples
                 end_idx = idx + post_samples
                 if start_idx < 0 or end_idx > len(channel.data):
@@ -627,7 +647,7 @@ class Plots:
             plt.plot(time_axis, erp, label=event.name, color=event.color)
 
         plt.xlabel('Time (s)')
-        plt.ylabel('Amplitude')
+        plt.ylabel(_amplitude_label([channel]))
         if title:
             plt.title(title)
         else:
@@ -643,4 +663,3 @@ class Plots:
             plt.show()
         else:
             plt.close()
-

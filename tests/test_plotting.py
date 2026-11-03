@@ -37,7 +37,7 @@ class TestPlotting(unittest.TestCase):
 
     def test_plot_session(self):
         try:
-            self.session.plots.plot_session(show=False)
+            self.session.plots.plot_channels(show=False)
         except Exception as e:
             self.fail(f'plot_session raised an exception: {e}')
 
@@ -61,7 +61,7 @@ class TestPlotting(unittest.TestCase):
 
     def test_plot_peth(self):
         try:
-            self.session.plots.plot_peth(neuron_name='_ch0_neuron0', event_name='1', show=False)
+            self.session.plots.plot_peth(neuron=self.session.neurons[0], events=[self.session.events['1']], show=False)
         except Exception as e:
             self.fail(f'plot_peth raised an exception: {e}')
 
@@ -94,7 +94,7 @@ class TestPlotting(unittest.TestCase):
                 event.color = 'orange'
 
         try:
-            eeg_session.plots.plot_spectrogram(channel_index=0, freq_range=(0, 30), event_names=['Open', 'Close'], show=False)
+            eeg_session.plots.plot_spectrogram(channel=eeg_session.channels[0], freq_range=(0, 30), events=list(eeg_session.events), show=False)
         except Exception as e:
             self.fail(f'plot_spectrogram raised an exception: {e}')
 
@@ -119,7 +119,7 @@ class TestPlotting(unittest.TestCase):
                 event.color = 'orange'
 
         try:
-            eeg_session.plots.plot_average_power(event_names=['Open', 'Close'], freq_range=(0, 30), epoch_window=(0, 5), channel_index=0, show=False)
+            eeg_session.plots.plot_average_power(events=list(eeg_session.events), freq_range=(0, 30), epoch_window=(0, 5), channel=eeg_session.channels[0], show=False)
         except Exception as e:
             self.fail(f'plot_average_power raised an exception: {e}')
 
@@ -146,7 +146,7 @@ class TestPlotting(unittest.TestCase):
                 event.color = 'red'
 
         try:
-            p300_session.plots.plot_erp(event_names=['standard', 'oddball'], epoch_window=(-0.2, 0.8), channel_index=0, show=False)
+            p300_session.plots.plot_erp(events=list(p300_session.events), epoch_window=(-0.2, 0.8), channel=p300_session.channels[0], show=False)
         except Exception as e:
             self.fail(f'plot_erp raised an exception: {e}')
 

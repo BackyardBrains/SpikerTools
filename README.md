@@ -21,7 +21,7 @@
 
 ## Features
 
-- Load neural and EEG data from WAV files.
+- Load neural and EEG data from NWB recordings or legacy WAV files with events sidecars.
 - Handle events and neuronal spikes with timestamped annotations.
 - Filter and normalize signal data.
 - Compute statistical measures like inter-spike intervals and firing rates.
@@ -45,8 +45,112 @@ Note: If SpikerTools is not yet available on PyPI, you can install it directly f
 
 ```bash
 git clone https://github.com/BackyardBrains/SpikerTools.git
-!pip install ./SpikerTools
+python -m pip install ./SpikerTools
 ```
+
+### NWB support (source installation)
+
+The NWB reader in this branch is not yet a published PyPI release. Install the
+source with its optional NWB dependencies using **Python 3.10 or newer**:
+
+```bash
+# From the SpikerTools source directory:
+python -m pip install '.[nwb]'
+```
+
+WAV-only installations do not require PyNWB. NWB support uses PyNWB 4.2 or later
+in the 4.x series; the compatibility tests run against 4.2.0.
+
+```python
+from spikertools import Session
+
+session = Session('recording.nwb')  # pathlib.Path also works
+print(session.channels.names())
+print(session.events.names())
+print(session.metadata['session_description'])
+
+# The existing plotting functions work with NWB too.
+session.plots.plot_channels(save_path='waveform.png', show=False)
+session.plots.plot_erp(save_path='erp.png', show=False)
+session.plots.plot_average_power(
+    events=list(session.events), channel=session.channels[0],
+    freq_range=(0, 100), epoch_window=(0, 1),
+    save_path='spectrum.png', show=False,
+)
+# If the recording contains sorted spikes:
+if session.neurons:
+    session.plots.plot_peth(
+        neuron=session.neurons[0], events=list(session.events),
+        save_path='peth.png', show=False,
+    )
+```
+
+These commands save ordinary PNG files for sharing. Uploading them to My files
+and running server jobs are separate integrations; this library performs local
+analysis and does not transfer login credentials or fetch protected URLs.
+
+#### What the NWB reader preserves
+
+- **Signal:** acquisition `ElectricalSeries`, time along the first dimension,
+  with one or multiple channels. Values in `session.data` and `channel.data`
+  are float64 **volts**: `stored * conversion * channel_conversion + offset`.
+  WAV data retains its original values and dtype; no voltage calibration is
+  invented for WAV. NWB signal plots label volts, or dimensionless after
+  standard-deviation/z-score normalization.
+- **Clock:** `starting_time` plus `rate`, including AqNWB's one-element
+  `starting_time` dataset, or uniformly spaced explicit timestamps. Existing
+  plots use seconds from the **first signal sample**: event and spike times
+  are shifted by `session.starting_time`, and `channel.time` begins at zero.
+  Add `session.starting_time` to recover the original NWB clock. Events outside
+  the signal range are retained, including negative relative times; epoch
+  plots omit trials without enough signal on both sides.
+- **Channels:** electrode row mapping (not electrode IDs), names from `label`,
+  calibration, electrode ID, location and group name. Duplicate display names
+  get a stable suffix so every channel remains addressable by name; the saved
+  label remains in `channel.metadata['label']`.
+- **Events:** every top-level `/events` table, including SpikeRecorder's
+  `markers`, code meanings and text annotations. Deleted rows are omitted;
+  active times are sorted. Distinct table/type identities remain separate
+  even when names collide. `event.metadata` identifies the original table and
+  type. `event.occurrences` is a source snapshot containing original NWB
+  timestamps and available ID, source, channel and duration columns. It is not
+  rewritten by subsequent edits/debouncing of `event.timestamps`.
+- **Sorted spikes:** standard `/units` becomes `session.neurons`, preserving
+  unit IDs, names, spike times and electrode membership. Each neuron exposes
+  `channel_numbers` for the selected signal (possibly empty), `electrode_rows`
+  and `metadata`. SpikeRecorder's threshold values remain **ADC counts**,
+  identified by `neuron.threshold_unit`, with band and threshold count retained.
+- **Recording information:** `session.datetime` is the saved session start
+  datetime, including timezone. `session.metadata` contains the identifier,
+  session description, timestamp reference datetime, NWB version, selected
+  series name, signal description and comments. All data is copied before the
+  file closes, so plots do not depend on an open file handle.
+
+When there are multiple acquisition signals, the reader selects
+`ElectricalSeries1` if present; otherwise select one explicitly:
+
+```python
+session = Session('recording.nwb', series_name='MyElectricalSeries')
+```
+
+The initial reader supports local HDF5 NWB files with acquisition
+`ElectricalSeries`, EventsTable and Units. It rejects irregular sample clocks
+rather than resampling silently. Processing-module signals, legacy
+`AnnotationSeries`, spike waveform `SpikeEventSeries`, NWB-Zarr, remote URLs,
+writing/exporting NWB, and automatic merging of separate recordings are outside
+this reader's scope. An events sidecar is rejected for NWB to avoid accidentally
+combining two clocks. Early SpikeRecorder files that advertise core 2.9 while
+containing EventsTable are read using the installed core schema, not cached
+file namespaces; custom NWB extensions are not automatically registered.
+
+Like the existing WAV loader, this is an eager, in-memory scientific reader.
+Allow memory for float64 samples and the time axis. It is not an isolation or
+resource-limiting boundary for untrusted uploaded files; a hosted analysis
+service must enforce its own worker isolation and limits.
+
+The calibration and time-axis conventions follow the
+[PyNWB ElectricalSeries documentation](https://pynwb.readthedocs.io/en/stable/pynwb.ecephys.html)
+and the [NWB format specification](https://nwb-schema.readthedocs.io/en/latest/format.html).
 
 ## Getting Started
 
@@ -191,3 +295,15 @@ Please ensure that your code follows best practices and includes appropriate tes
 ## License
 
 SpikerTools is released under the **MIT License**.
+
+## Development tests
+
+```bash
+python -m pip install -e '.[nwb]' pytest build
+MPLBACKEND=Agg python -m pytest -q
+python -m build
+```
+
+Tests generate small NWB files and check calibrated samples, voltage power,
+clock offsets, event deletion/identity, electrode mapping, sorted spikes, graph
+output and WAV compatibility. CI also runs the WAV suite without PyNWB installed.

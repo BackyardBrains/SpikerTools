@@ -96,7 +96,7 @@ class Channel:
         self._container = None  # Reference to the Channels container
 
         if self.sample_rate:
-            self._t = np.arange(0, len(self.data) / self.sample_rate, 1 / self.sample_rate)
+            self._t = np.arange(len(self.data)) / self.sample_rate
         else:
             self._t = np.arange(len(self.data))
 
@@ -152,6 +152,8 @@ class Channel:
         return self
 
     def normalize(self, method='zscore', norm_value=None):
+        if method in ('std', 'zscore') and hasattr(self, 'unit'):
+            self.unit = 'dimensionless'
         if method == 'mean':
             self.data = self.data - np.mean(self.data)
         elif method == 'std':
@@ -503,8 +505,31 @@ class Events:
         return event
 
 class Session:
-    def __init__(self, wav_file_path, events_file_path=None):
-        self.wav_file = wav_file_path
+    """An in-memory WAV or NWB recording with a recording-relative time axis.
+
+    ``wav_file_path`` keeps its historical keyword name and accepts either
+    format (including pathlib paths). NWB reads require ``spikertools[nwb]``.
+    Use ``series_name`` to select an acquisition ElectricalSeries explicitly.
+    """
+
+    def __init__(self, wav_file_path, events_file_path=None, *, series_name=None):
+        self.file_path = os.fspath(wav_file_path)
+        self.wav_file = self.file_path  # Historical attribute retained.
+        self.starting_time = 0.0
+        self.metadata = {}
+        if os.path.splitext(self.file_path)[1].lower() == '.nwb':
+            if events_file_path is not None:
+                raise ValueError("NWB contains its events; do not supply a WAV events sidecar.")
+            from .nwb import read_nwb
+            self.__dict__.update(read_nwb(self.file_path, series_name=series_name))
+            from .plots import Plots
+            self.plots = Plots(self)
+            return
+        if series_name is not None:
+            raise ValueError("series_name is only available for NWB recordings.")
+        wav_file_path = self.file_path
+        self.format = 'wav'
+        self.unit = 'ADC counts'
         self.sample_rate, self.data = wavfile.read(wav_file_path)
         print(f"Loaded WAV file: {wav_file_path}")
         print(f"Sample rate: {self.sample_rate} Hz")
@@ -512,9 +537,9 @@ class Session:
 
         if events_file_path is None:
             # Infer events file path
-            events_file = wav_file_path.replace('.wav', '-events.txt')
+            events_file = os.path.splitext(wav_file_path)[0] + '-events.txt'
         else:
-            events_file = events_file_path
+            events_file = os.fspath(events_file_path)
 
         print(f"Looking for events file: {events_file}")
 

@@ -512,6 +512,21 @@ class Session:
     Use ``series_name`` to select an acquisition ElectricalSeries explicitly.
     """
 
+    def analysis_catalogue(self):
+        """Return stable event/channel/unit identities for numerical analysis."""
+        from .experiment import session_catalogue
+        return session_catalogue(self)
+
+    def analyze_events(self, settings, *, subject_id=None, session_id=None,
+                       channel=0, neuron=None, excluded_trial_ids=None):
+        """Analyze this session using the same kernel as an Experiment."""
+        from .experiment import Experiment
+        subject_id = subject_id if subject_id is not None else getattr(self, 'subject_id', None)
+        session_id = session_id if session_id is not None else getattr(self, 'session_id', None)
+        experiment = Experiment([self], subject_ids=[subject_id], session_ids=[session_id])
+        return experiment.analyze(settings, channel=channel, neuron=neuron,
+                                  excluded_trials={session_id: excluded_trial_ids or {}})['sessions'][0]
+
     def __init__(self, wav_file_path, events_file_path=None, *, series_name=None):
         self.file_path = os.fspath(wav_file_path)
         self.wav_file = self.file_path  # Historical attribute retained.
@@ -660,4 +675,4 @@ class Session:
             date_parts = [int(part) for part in date_str.split('-')]
             time_parts = [int(part) for part in time_str.split('.')]
             return datetime(*date_parts, *time_parts)
-        return None 
+        return None

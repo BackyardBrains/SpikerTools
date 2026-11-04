@@ -5,9 +5,13 @@ namespaces are deliberately not loaded: early SpikeRecorder writers cache core
 2.9 while already writing the standard 2.10 EventsTable layout.
 """
 
+import json
+
 import numpy as np
 
 from .models import Channel, Channels, Event, Events, Neuron
+
+CLOCK_CHUNK_SAMPLES = 65_536
 
 
 def _text(value):
@@ -45,22 +49,60 @@ def _unique_name(name, used, suffix):
     return candidate
 
 
+def _display_metadata(value):
+    """Read only bounded optional BYB display hints; never apply display filters."""
+    text = _text(value)
+    if len(text) > 512 or len(text.encode('utf-8')) > 512:
+        return {}
+    try:
+        display = json.loads(text)
+    except (ValueError, RecursionError):
+        return {}
+    if not isinstance(display, dict) or display.get('v') != 1:
+        return {}
+    result = {}
+    prep = display.get('prep')
+    if isinstance(prep, dict) and prep.get('kind') in ('neuron', 'plant', 'heart', 'eye', 'brain', 'muscle', 'custom'):
+        result['signal_role'] = prep['kind']
+    filters = display.get('filters')
+    if isinstance(filters, dict):
+        result['recorded_filters'] = {
+            key: value for key, value in filters.items()
+            if key in ('highPassHz', 'lowPassHz', 'notchHz') and
+            (value is None or (isinstance(value, (float, int)) and not isinstance(value, bool)
+                               and np.isfinite(value) and 0 < value <= 999999))}
+    return result
+
+
 def _timing(group, samples):
     if 'timestamps' in group:
         if 'starting_time' in group:
             raise ValueError('NWB signal has conflicting timestamps and starting_time.')
-        times = _vector(group, 'timestamps', samples).astype(float)
-        if samples < 2 or not np.all(np.isfinite(times)) or np.any(np.diff(times) <= 0):
+        dataset = group['timestamps']
+        if dataset.shape != (samples,) or dataset.dtype.kind not in 'iuf' or samples < 2:
             raise ValueError('NWB timestamps must contain at least two increasing finite times.')
-        start = times[0]
-        interval = (times[-1] - start) / (samples - 1)
-        expected = start + np.arange(samples) * interval
-        # No resampling: existing filters, FFTs and epochs require a regular clock.
-        if not np.allclose(times, expected, rtol=0, atol=max(1e-9, interval * 0.001)):
-            raise ValueError('Irregular NWB timestamps are unsupported; resample explicitly first.')
+        start = _scalar(dataset[0], 'first timestamp')
+        end = _scalar(dataset[-1], 'last timestamp')
+        interval = (end - start) / (samples - 1)
+        if not np.isfinite(interval) or interval <= 0:
+            raise ValueError('NWB timestamps must contain at least two increasing finite times.')
         rate = 1 / interval
         if not np.isfinite(rate) or rate <= 0:
             raise ValueError('NWB sample rate must be finite and positive.')
+        # Validate the full clock in bounded chunks, including adjacent chunk
+        # boundaries. Metadata-only reads must not allocate the full time axis.
+        previous = None
+        for first in range(0, samples, CLOCK_CHUNK_SAMPLES):
+            last = min(samples, first + CLOCK_CHUNK_SAMPLES)
+            times = np.asarray(dataset[first:last], dtype=float)
+            if (not np.all(np.isfinite(times)) or np.any(np.diff(times) <= 0)
+                    or (previous is not None and times[0] <= previous)):
+                raise ValueError('NWB timestamps must contain at least two increasing finite times.')
+            expected = start + np.arange(first, last) * interval
+            # No resampling: existing filters, FFTs and epochs need a regular clock.
+            if not np.allclose(times, expected, rtol=0, atol=max(1e-9, interval * 0.001)):
+                raise ValueError('Irregular NWB timestamps are unsupported; resample explicitly first.')
+            previous = times[-1]
         return float(start), float(rate)
     if 'starting_time' not in group:
         raise ValueError('NWB signal has neither timestamps nor starting_time/rate.')
@@ -111,13 +153,14 @@ def _events(file, start):
                 label = annotation or meanings.get(code) or (str(code) if code is not None else table.name.rsplit('/', 1)[-1])
                 name = _unique_name(label, names, table.name.rsplit('/', 1)[-1] + ':' + str(code))
                 event = Event(name)
-                event.metadata = {'table': table.name, 'event_type': code, 'label': label}
+                event.metadata = {'table': table.name, 'event_type': code,
+                                  'annotation': annotation, 'label': label}
                 event.occurrences = []
                 grouped[key] = event
                 events.append(event)
             event = grouped[key]
             event.timestamps.append(float(times[i] - start))
-            occurrence = {'timestamp': float(times[i])}
+            occurrence = {'timestamp': float(times[i]), 'row_index': int(i)}
             for column, values in columns.items():
                 value = values[i].item()
                 occurrence[column] = value
@@ -164,7 +207,49 @@ def _neurons(nwb, start, channel_rows):
     return neurons
 
 
-def read_nwb(path, series_name=None):
+def _limit(value, default, name):
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 0:
+        raise ValueError('{} must be a nonnegative integer or None.'.format(name))
+    return int(value)
+
+
+def _metadata_limits(file, max_event_rows, max_spike_times, max_units):
+    """Enforce row counts from shapes before PyNWB/model materialization."""
+    count = 0
+    for table in file.get('events', {}).values():
+        if 'timestamp' not in table or len(table['timestamp'].shape) != 1:
+            raise ValueError('NWB event timestamps must be a one-dimensional column.')
+        count += table['timestamp'].shape[0]
+        if max_event_rows is not None and count > max_event_rows:
+            raise ValueError('NWB event rows exceed max_event_rows before materialization.')
+    if 'units' in file:
+        table = file['units']
+        for name, limit in [('id', max_units), ('spike_times', max_spike_times)]:
+            if name in table:
+                if len(table[name].shape) != 1:
+                    raise ValueError('NWB units/{} must be a one-dimensional column.'.format(name))
+                if limit is not None and table[name].shape[0] > limit:
+                    raise ValueError('NWB units/{} exceeds metadata limit before materialization.'.format(name))
+
+
+def read_nwb(path, series_name=None, *, load_data=True, max_event_rows=None,
+             max_spike_times=None, max_units=None, max_channels=None):
+    """Read NWB models, optionally without any signal samples or channel clocks.
+
+    ``load_data=False`` is a metadata adapter for bounded file workers. It returns
+    the same dict with ``data=None`` and empty Channel.data/time arrays, alongside
+    ``sample_count`` and ``duration_seconds``. Events and saved spike trains remain
+    available. The caller can read one calibrated channel with its own bounded
+    reader and pass it to ``analyze_session``. This function performs no remote IO.
+    """
+    if not isinstance(load_data, bool):
+        raise ValueError('load_data must be a bool.')
+    max_event_rows = _limit(max_event_rows, None if load_data else 100_000, 'max_event_rows')
+    max_spike_times = _limit(max_spike_times, None if load_data else 10_000_000, 'max_spike_times')
+    max_units = _limit(max_units, None if load_data else 256, 'max_units')
+    max_channels = _limit(max_channels, None if load_data else 64, 'max_channels')
     try:
         import h5py
         from pynwb import NWBHDF5IO
@@ -174,6 +259,7 @@ def read_nwb(path, series_name=None):
                           'Install with: pip install "spikertools[nwb]"') from error
 
     with h5py.File(path, 'r') as file, NWBHDF5IO(file=file, mode='r', load_namespaces=False) as io:
+        _metadata_limits(file, max_event_rows, max_spike_times, max_units)
         nwb = io.read()
         candidates = {name: series for name, series in nwb.acquisition.items()
                       if isinstance(series, ElectricalSeries) and not isinstance(series, SpikeEventSeries)}
@@ -192,16 +278,20 @@ def read_nwb(path, series_name=None):
             raise ValueError('NWB signal must be a nonempty numeric time-by-channel array.')
         samples = dataset.shape[0]
         count = dataset.shape[1] if dataset.ndim == 2 else 1
+        if max_channels is not None and count > max_channels:
+            raise ValueError('NWB channel count exceeds max_channels before materialization.')
         start, rate = _timing(file['acquisition'][series.name], samples)
         conversion = _scalar(series.conversion, 'conversion')
         offset = _scalar(series.offset, 'offset')
         factors = np.ones(count) if series.channel_conversion is None else np.asarray(series.channel_conversion[:], dtype=float)
         if factors.shape != (count,) or not np.all(np.isfinite(factors * conversion)):
             raise ValueError('NWB channel_conversion must have one finite value per channel.')
-        data = np.asarray(dataset[:], dtype=np.float64)
-        data *= conversion
-        data *= factors if data.ndim == 2 else factors[0]
-        data += offset
+        data = None
+        if load_data:
+            data = np.asarray(dataset[:], dtype=np.float64)
+            data *= conversion
+            data *= factors if data.ndim == 2 else factors[0]
+            data += offset
 
         electrodes = series.electrodes.table
         rows = np.asarray(series.electrodes.data[:])
@@ -211,7 +301,8 @@ def read_nwb(path, series_name=None):
         for number, row in enumerate(rows):
             label = _text(electrodes['label'][row]) if 'label' in electrodes.colnames else ''
             name = _unique_name(label or 'Channel {}'.format(number), names, 'channel ' + str(number))
-            channel = Channel(data if data.ndim == 1 else data[:, number], rate, number, name)
+            values = np.empty(0) if data is None else (data if data.ndim == 1 else data[:, number])
+            channel = Channel(values, rate, number, name)
             channel.unit = 'volts'
             channel.metadata = {'electrode_row': int(row), 'electrode_id': int(electrodes.id[row]),
                                 'label': label, 'conversion': conversion,
@@ -219,12 +310,18 @@ def read_nwb(path, series_name=None):
             for field in ('location', 'group_name'):
                 if field in electrodes.colnames:
                     channel.metadata[field] = _text(electrodes[field][row])
+            if 'byb_display_v1' in electrodes.colnames:
+                channel.metadata.update(_display_metadata(electrodes['byb_display_v1'][row]))
             channels.append(channel)
         metadata = {key: getattr(nwb, key) for key in
                     ('identifier', 'session_description', 'session_start_time', 'timestamps_reference_time')}
         metadata.update(nwb_version=_text(file.attrs['nwb_version']), series_name=series.name,
-                        description=series.description, comments=series.comments)
-        return dict(format='nwb', sample_rate=rate, data=data, starting_time=start,
+                        description=series.description, comments=series.comments,
+                        session_id=nwb.session_id,
+                        subject_id=nwb.subject.subject_id if nwb.subject is not None else None)
+        return dict(format='nwb', sample_rate=rate, data=data, data_loaded=load_data, starting_time=start,
+                    sample_count=samples, duration_seconds=samples / rate,
+                    session_id=metadata['session_id'], subject_id=metadata['subject_id'],
                     unit='volts', channels=channels, events=_events(file, start),
                     neurons=_neurons(nwb, start, rows.tolist()), metadata=metadata,
                     datetime=nwb.session_start_time)

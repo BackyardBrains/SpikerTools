@@ -249,6 +249,166 @@ session.plots.plot_average_power(
 )
 ```
 
+## Event experiments (numerical API v1)
+
+`Experiment` groups independent subjects' recordings without concatenating files.
+Version 1 requires **one session per unique, explicit subject**. NWB `subject_id`
+and `session_id` are exposed when present; supply IDs for recordings that lack
+them. A duplicate source path, session object, session ID or subject ID is rejected.
+This is a source-library API; it is not a My files deployment or a new PyPI release.
+
+```python
+from spikertools import Session, Experiment
+
+sessions = [Session("subject-a.nwb"), Session("subject-b.nwb")]
+experiment = Experiment(sessions,
+                        subject_ids=["subject-a", "subject-b"],
+                        session_ids=["recording-a", "recording-b"])
+
+catalogue = sessions[0].analysis_catalogue()
+touch_key = catalogue["events"][0]["key"]  # Review event identities in every file.
+settings = {
+    "method": "event_average",       # or "rms", or "peth" with saved spikes
+    "event_keys": [touch_key],
+    "tmin": -0.2, "tmax": 0.8,      # seconds relative to each event
+    "baseline": [-0.2, 0.0],        # optional; unavailable for PETH
+    "max_output_points": 2000,
+}
+result = experiment.analyze(settings, channel=0)
+curve = result["events"][0]
+print(curve["subject_count"], curve["trial_count"])
+# curve["time"], curve["mean"], curve["subject_sd"] are ordinary JSON lists.
+```
+
+For example, `excluded_trials={"recording-a": {touch_key: ["row:3"]}}` excludes
+that occurrence, if `row:3` exists under the chosen event in that recording. An
+exclusion referring to an absent trial is an error. `channel` is a channel
+position or a `{session_id: position}` mapping. `excluded_session_ids` excludes
+whole sessions; `excluded_trials` maps session IDs to event-key/trial-ID lists.
+`Session.analyze_events(settings, ...)` returns the same individual-session result.
+
+The catalogue contains channels, saved units and event occurrences. An NWB event
+key is compact JSON `[table_path, event_type, annotation]`; labels are display text
+and never merge identities. A trial ID is `row:<original event table row>`, scoped
+to its event key and session. Equal timestamps remain distinct selectable trials.
+Deleted NWB rows are absent. If an NWB event's timestamp list was subsequently
+edited without updating its row identities, analysis fails and asks you to reload
+the source. In-memory legacy events use their names and original list positions;
+keep those lists unchanged while reusing saved selections.
+
+For PETH, set `method="peth"`, `baseline=None` and `bin_size` in seconds. Select
+the saved unit with `neuron` (position or per-session mapping); only a single
+compatible unit is automatically selected. Electrode/channel linkage is required.
+Empty but present saved spike trains yield zero rates; absent spikes fail clearly.
+Unit IDs are recorded independently for every session and do **not** identify the
+same biological neuron across subjects. This API does not detect new spikes.
+
+### Calculation and inclusion rules
+
+- Event averages and RMS require identical native sample rates across sessions.
+  Different rates fail explicitly; there is no hidden interpolation, resampling
+  or anti-alias filter. PETH uses common time bins and can combine different rates.
+- Signal epochs use the nearest event sample (half-sample ties round up). Every
+  trial records the alignment error in seconds. Signal times are native offsets
+  inside `[tmin,tmax)`; tiny rounding tolerance at exact sample boundaries is
+  `1e-9` samples. Event and spike times are relative to the selected channel's
+  first sample; the NWB reader subtracts the recorded start clock once.
+- RMS is calculated **within each trial before averaging**. Its centered window
+  has `round(rms_window * sample_rate)` samples (half ties up, minimum one). An
+  even window has one more sample before the center; effective size/padding are
+  returned in `processing`. RMS uses linear-work block prefix/suffix norms, avoiding
+  cancellation after large artifacts. Subnormal values that would underflow during
+  normalization fail explicitly with `precision_loss`. Baseline correction subtracts the trial's baseline
+  mean: raw amplitude for event averages, RMS amplitude for RMS. It is not percent
+  normalization or division by baseline.
+- The entire response, baseline and RMS padding must exist. Edge or nonfinite
+  trials are excluded with a reason. PETH includes spikes at the left bin boundary
+  and excludes the right boundary, including `tmax`; a short last bin uses its
+  true width. Only complete, retained trials enter the denominator.
+- All native samples enter the calculations. After calculation, adjacent output
+  samples are averaged into at most `max_output_points` display bins, with their
+  mean times. This lossy display reduction is **not** a resampled signal for later
+  spectral analysis. PETH instead requires its explicit bin count to fit the limit.
+- Each subject's result is its own retained-trial mean; the group equally weights
+  those subject means. `subject_sd` is descriptive sample standard deviation across
+  subject means, or `null` for one subject. It is **not** a confidence interval,
+  standard error or hypothesis test. Per-event subject/trial counts, contributing
+  subject IDs, and subjects with no valid trials are all returned.
+- Each session must retain at least one usable trial among selected events; each
+  group event must have at least one contributing subject. All-excluded/invalid
+  analysis fails with `no_valid_trials`, rather than a successful empty graph.
+- Volts, V, mV and uV are calibrated to volts; dimensionless and ADC counts remain
+  distinct units. Unknown or incompatible group units fail. Signal role and prior
+  display filter hints are exposed from bounded optional `byb_display_v1` metadata;
+  they are informational and do not apply filtering. The caller must confirm that
+  the chosen channels/conditions are physiologically comparable. Equal units alone
+  do not establish that comparability.
+
+### Bounded file-worker adapter
+
+Workers can load just one selected channel and use the same kernel without an
+eager multi-channel `Session`:
+
+```python
+from spikertools.experiment import analyze_session, aggregate_results, event_key
+
+key = event_key("/events/markers", 1)
+subject_result = analyze_session(
+    session_id="recording-a", subject_id="subject-a", channel_id="0",
+    data=selected_channel, sample_rate=1000, unit="volts",
+    events=[{"key": key, "label": "Touch",
+             "trials": [{"id": "row:0", "time": 2.0}]}],
+    settings={"method": "rms", "event_keys": [key],
+              "tmin": -0.2, "tmax": 0.8, "rms_window": 0.05},
+    excluded_trial_ids={},
+)
+group_result = aggregate_results([subject_result])
+```
+
+Optional PETH arguments are `spike_times`, `spike_unit_id`, `spike_channel_ids`
+(which must contain `channel_id`) and `duration_seconds`. `data=None` is allowed
+for PETH if duration is explicit. When data exists, duration must equal
+`len(data)/sample_rate`. All IDs are strings and all times are finite seconds.
+`AnalysisError` exposes a stable `.code` and structured `.details`, including
+`missing_event`, `missing_spikes`, `spike_channel_mismatch`, `duplicate_subject`,
+`incompatible_grid`, `incompatible_units`, `bounds` and `no_valid_trials`.
+
+`spikertools.nwb.read_nwb(path, series_name=None, load_data=False)` provides the
+reader's model dictionary without reading signal samples or allocating full
+per-channel clocks. It includes `sample_count`, `duration_seconds`, calibration,
+event row identities and saved spike times; explicit timestamp clocks are validated
+in chunks of at most 65,536 samples. `data` is null, channel data/time arrays are
+empty, and `data_loaded=False` marks these objects as catalogue-only. Passing such
+a session to `Experiment.analyze` fails with `metadata_only`; use a bounded reader
+for the selected calibrated channel and call `analyze_session` instead. PETH can
+use `data=None` and explicit duration. Default `load_data=True` preserves the eager
+local `Session` behavior. Events and saved spikes are still loaded into memory.
+Metadata-only defaults cap event rows at 100,000, saved spike times at 10 million,
+units at 256 and channels at 64; dataset shapes are checked before materialization.
+Pass `max_event_rows`, `max_spike_times`, `max_units` and `max_channels` to set
+stricter limits. Eager reads retain their existing unlimited behavior unless those
+limits are explicitly set. The web service must additionally bound encoded text
+metadata and total bytes.
+
+Session output has `schema_version="spikertools.session-analysis.v1"`, the IDs,
+sample rate/duration/unit, normalized `settings`, `processing` provenance and an
+`events` list. Each event has `key`, `label`, `time`, `mean` (or null when empty),
+`trial_count`, `trial_total` and `trials`. Every trial has `id`, `time`, `included`,
+`reason` (null, `excluded`, `edge_window` or `nonfinite`) and alignment error.
+Group output has `schema_version="spikertools.experiment-analysis.v1"`,
+`weighting="equal_subject"`, settings/unit, validated `sessions`, and event means,
+subject SD/count/IDs, trial counts and `excluded_subjects` with reason/counts.
+Results contain finite JSON values and never modify source arrays or events.
+
+Limits are 24 subjects, 64 event types, 100,000 occurrences per session, 50 million
+signal samples, 10 million spikes, sample rates up to 1 MHz, 120-second response
+and baseline windows within ±120 seconds, 2 million samples per native epoch/RMS
+window, 200 million sample-work units per session, 10,000 output points per trace,
+and 10 million combined event-trace values. These are library ceilings; a web
+service should additionally bound file bytes, process memory, CPU and job time.
+Authenticate source access separately; this library does not fetch remote URLs,
+grant sharing rights, write NWB files, or execute user-provided scripts.
+
 ## For Teachers
 
 SpikerTools is designed to be an educational tool that integrates seamlessly into classroom activities. Here's how you can incorporate it into your teaching:

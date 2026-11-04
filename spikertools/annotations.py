@@ -80,7 +80,7 @@ def detect_spikes(data, *, sample_rate, channel_id, unit='volts', settings=None)
     if not math.isfinite(baseline) or not math.isfinite(sigma):
         _error('nonfinite_signal', 'Signal scaling exceeds finite detector precision.')
     if sigma <= 0:
-        _error('zero_noise', 'Estimated noise is zero; a 4-sigma threshold cannot be estimated from this channel.')
+        _error('zero_noise', 'Estimated noise is zero; a sigma-based threshold cannot be estimated from this channel.')
     low, high = baseline - config['sigma_multiplier'] * sigma, baseline + config['sigma_multiplier'] * sigma
     if not math.isfinite(low) or not math.isfinite(high):
         _error('nonfinite_signal', 'The physical threshold exceeds finite detector precision.')
@@ -335,7 +335,10 @@ def _event_requests(file, requests):
             shortcut = old
         else:
             shortcut = shortcut or ''
-        if shortcut and shortcut in occupied and occupied[shortcut] != identity:
+        # Historical files may already reuse a key in another table. Renaming a
+        # meaning must preserve that existing binding, not retroactively reject
+        # it. Only newly introduced shortcut assignments create conflicts.
+        if shortcut and not defined and shortcut in occupied and occupied[shortcut] != identity:
             _error('shortcut_conflict', 'Another event already uses this shortcut.')
         if shortcut:
             occupied[shortcut] = identity

@@ -451,6 +451,9 @@ Existing shortcuts are preserved; conflicting requests fail. New definitions can
 include a `shortcut`, including in an explicitly selected absent events table.
 They add no occurrence or timestamp. The separate `event_definitions` catalogue
 contains table, code, name, shortcut and occurrence count, including zero counts.
+Its `has_definition` flag distinguishes a meanings row from an observed numeric
+code that has not been named yet. Historical cross-table shortcut reuse survives
+renaming; only a new conflicting assignment is rejected.
 Appearance and free-text occurrence annotations remain unchanged. The native
 recorder reads these definitions; its UI may merge equal names across codes.
 Copies retain `annotation_root_source_sha256` across generations so applications

@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from spikertools.annotations import detect_spikes, write_annotated_copy
-from spikertools.experiment import AnalysisError
+from spikertools.experiment import AnalysisError, analyze_session, session_catalogue
 
 
 def signal(length=4000):
@@ -158,11 +158,33 @@ def test_copy_roundtrip_preserves_raw_unknown_events_units_and_absolute_clock(tm
     assert loaded.neurons[-1].timestamps == pytest.approx([.101])
     assert loaded.neurons[-1].channel_numbers == [0]
     definitions = {(d['table'], d['code']): d for d in loaded.event_definitions}
-    assert definitions['/events/markers', 1] == dict(table='/events/markers', code=1, name='Touch', shortcut='1', occurrences=2)
+    assert definitions['/events/markers', 1] == dict(table='/events/markers', code=1, name='Touch', shortcut='1', occurrences=2, has_definition=True)
     assert definitions['/events/markers', 3]['occurrences'] == 0
     assert len(loaded.events) == 2  # Existing blank/free-text groups, no fabricated trial.
     assert loaded.annotation_root_source_sha256 == source_hash
+    event = session_catalogue(loaded)['events'][0]
+    peth = analyze_session(session_id='session', subject_id='subject', data=None,
+        sample_rate=loaded.sample_rate, unit='volts', channel_id='0', duration_seconds=loaded.duration_seconds,
+        events=[event], settings=dict(method='peth', event_keys=[event['key']], tmin=-.19, tmax=.21, bin_size=.1),
+        spike_times=loaded.neurons[-1].timestamps, spike_channel_ids=['0'], spike_unit_id=receipt['new_unit_id'])
+    assert peth['processing']['spike_unit_id'] == '18'
+    assert sum(peth['events'][0]['mean']) == pytest.approx(10.)
     assert validate(path=output) == []
+
+
+def test_explicit_timestamp_clock_is_preserved_when_saving_spikes(tmp_path):
+    source = recording(tmp_path / 'clock.nwb')
+    with h5py.File(source, 'r+') as file:
+        series = file['acquisition/ElectricalSeries1']
+        del series['starting_time']
+        stamps = series.create_dataset('timestamps', data=5 + np.arange(4000) / 1000)
+        stamps.attrs.update(unit='seconds', interval=1)
+    output = tmp_path / 'copy.nwb'
+    write_annotated_copy(source, output, detection=result_for(source), channel_index=0, operation_id='explicit-clock')
+    with h5py.File(source) as before, h5py.File(output) as after:
+        np.testing.assert_array_equal(before['acquisition/ElectricalSeries1/timestamps'][:], after['acquisition/ElectricalSeries1/timestamps'][:])
+        assert 'starting_time' not in after['acquisition/ElectricalSeries1']
+        assert after['units/spike_times'][-1] == pytest.approx(5.101)
 
 
 def test_absent_event_table_creates_definitions_with_no_timestamps(tmp_path):
@@ -188,6 +210,7 @@ def test_observed_code_without_meanings_gets_name_and_requested_shortcut(tmp_pat
         attrs = dict(series['starting_time'].attrs)
         del series['starting_time']
         series.create_dataset('starting_time', data=[5.]).attrs.update(attrs)
+    assert all(not d['has_definition'] for d in read_nwb(source, load_data=False)['event_definitions'])
     output = tmp_path / 'named.nwb'
     write_annotated_copy(source, output, operation_id='names', event_names=[
         dict(table='/events/markers', code=i, name=f'Condition {i}', shortcut=str(i)) for i in range(1, 7)])
@@ -195,6 +218,24 @@ def test_observed_code_without_meanings_gets_name_and_requested_shortcut(tmp_pat
     assert [d['shortcut'] for d in loaded.event_definitions] == list('123456')
     assert [d['occurrences'] for d in loaded.event_definitions] == [2, 0, 0, 0, 0, 0]
     assert validate(path=output) == []
+
+
+def test_rename_preserves_historical_shortcut_reuse_across_tables(tmp_path):
+    source = recording(tmp_path / 'source.nwb')
+    with h5py.File(source, 'r+') as file:
+        file.copy('events/markers', 'events/other')
+        other = file['events/other']
+        other['meanings_tables/event_type_meanings'].attrs['target'] = other['event_type'].ref
+    output = tmp_path / 'copy.nwb'
+    write_annotated_copy(source, output, operation_id='rename-existing', event_names=[
+        dict(table='/events/markers', code=1, name='Touch', shortcut='1')])
+    definitions = {(d['table'], d['code']): d for d in Session(output).event_definitions}
+    assert definitions['/events/markers', 1]['name'] == 'Touch'
+    assert definitions['/events/other', 1]['name'] == 'Old one'
+    assert definitions['/events/markers', 1]['shortcut'] == definitions['/events/other', 1]['shortcut'] == '1'
+    with pytest.raises(AnalysisError, match='shortcut'):
+        write_annotated_copy(source, tmp_path / 'conflict.nwb', operation_id='new-conflict', event_names=[
+            dict(table='/events/markers', code=3, name='New', shortcut='1')])
 
 
 def test_negative_calibration_and_zero_detection_copy(tmp_path):

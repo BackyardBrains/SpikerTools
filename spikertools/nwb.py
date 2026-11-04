@@ -194,7 +194,8 @@ def _event_definitions(file, limit=None):
             if not isinstance(code, (int, float)) or not np.isfinite(code) or int(code) != code:
                 raise ValueError('Event definitions require finite integer event codes.')
             definitions.append(dict(table=table.name, code=int(code), name=meanings.get(code, ''),
-                                    shortcut=shortcuts.get(code, ''), occurrences=counts.get(code, 0)))
+                                    shortcut=shortcuts.get(code, ''), occurrences=counts.get(code, 0),
+                                    has_definition=code in meanings))
             if limit is not None and len(definitions) > limit:
                 raise ValueError('Event definitions exceed the supported limit.')
     return definitions

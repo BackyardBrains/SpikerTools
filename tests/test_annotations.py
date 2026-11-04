@@ -8,8 +8,9 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from spikertools.annotations import detect_spikes, write_annotated_copy
-from spikertools.experiment import AnalysisError, analyze_session, session_catalogue
+from spikertools.annotations import (detect_spikes, resolve_event_names,
+                                    validate_annotated_copy, write_annotated_copy)
+from spikertools.experiment import AnalysisError, analyze_session, event_key, session_catalogue
 
 
 def signal(length=4000):
@@ -236,6 +237,241 @@ def test_rename_preserves_historical_shortcut_reuse_across_tables(tmp_path):
     with pytest.raises(AnalysisError, match='shortcut'):
         write_annotated_copy(source, tmp_path / 'conflict.nwb', operation_id='new-conflict', event_names=[
             dict(table='/events/markers', code=3, name='New', shortcut='1')])
+
+
+def native_meanings_links(path):
+    """Match nwb_io.cpp writeMeaningsTable's direct, absolute target links."""
+    with h5py.File(path, 'r+') as file:
+        table = file['events/markers']
+        types = table['meanings_tables/event_type_meanings']
+        del types.attrs['target']
+        types['target'] = h5py.SoftLink(table['event_type'].name)
+        file.copy(types, table['meanings_tables'], name='source_meanings')
+        sources = table['meanings_tables/source_meanings']
+        del sources['target']
+        sources['target'] = h5py.SoftLink(table['source'].name)
+    return path
+
+
+def test_native_meanings_links_survive_rename_and_unused_definition(tmp_path):
+    source = native_meanings_links(recording(tmp_path / 'native.nwb'))
+    before = sha(source)
+    output = tmp_path / 'named.nwb'
+    write_annotated_copy(source, output, operation_id='native-names', event_names=[
+        dict(table='/events/markers', code=1, name='Baseline'),
+        dict(table='/events/markers', code=9, name='Blow', shortcut='9')])
+    assert sha(source) == before
+    with h5py.File(source) as original, h5py.File(output) as copied:
+        for column in ('event_type', 'source'):
+            group = copied[f'events/markers/meanings_tables/{column}_meanings']
+            target = group.get('target', getlink=True)
+            assert isinstance(target, h5py.SoftLink)
+            assert target.path == f'/events/markers/{column}'
+            assert group['target'].id == copied[f'events/markers/{column}'].id
+        for name in ('id', 'timestamp', 'event_type', 'source', 'annotation', 'deleted'):
+            np.testing.assert_array_equal(original[f'events/markers/{name}'][:], copied[f'events/markers/{name}'][:])
+        np.testing.assert_array_equal(original['acquisition/ElectricalSeries1/data'][:], copied['acquisition/ElectricalSeries1/data'][:])
+    definitions = {d['code']: d for d in Session(output).event_definitions}
+    assert definitions[1]['name'] == 'Baseline' and definitions[1]['shortcut'] == '1'
+    assert definitions[9]['name'] == 'Blow' and definitions[9]['occurrences'] == 0
+
+
+def keyboard_recording(path, shortcuts=('1', '2', '3')):
+    source = native_meanings_links(recording(path, units=False))
+    with h5py.File(source, 'r+') as file:
+        table = file['events/markers']
+        table['event_type'][:] = [1, 2, 3]
+        table['deleted'][:] = 0
+        table['annotation'][:] = ['', '', '']
+        meanings = table['meanings_tables/event_type_meanings']
+        fields = dict(id=[0, 1, 2], value=[1, 2, 3], shortcut=list(shortcuts),
+                      meaning=[{'1': 'Baseline', '2': 'Baseline end', '3': 'Saline'}[k] for k in shortcuts])
+        for key, values in fields.items():
+            attrs = dict(meanings[key].attrs)
+            del meanings[key]
+            dtype = h5py.string_dtype('utf-8') if key in ('shortcut', 'meaning') else np.int32
+            meanings.create_dataset(key, data=values, dtype=dtype).attrs.update(attrs)
+        file['acquisition/ElectricalSeries1/data'][:, 0] = np.arange(4000)
+    return source
+
+
+def test_shortcut_identity_selects_same_key_when_local_codes_are_permuted(tmp_path):
+    for filename, shortcuts, baseline_code in [('one.nwb', ('1', '2', '3'), 1),
+                                                ('two.nwb', ('3', '1', '2'), 2)]:
+        source = keyboard_recording(tmp_path / filename, shortcuts)
+        session = Session(source)
+        legacy = session_catalogue(session)
+        catalogue = session_catalogue(session, event_identity='keyboard_shortcut_v1')
+        assert legacy['event_identity'] == 'table_code_annotation_v1'
+        assert catalogue['event_identity'] == 'keyboard_shortcut_v1'
+        event = next(e for e in catalogue['events'] if e['key'] == '["shortcut","1"]')
+        assert event['label'] == 'Baseline' and event['identity_status'] == 'bound'
+        assert event['source_events'] == [dict(table='/events/markers', code=baseline_code, annotation='',
+            legacy_key=event_key('/events/markers', baseline_code, ''))]
+        old = next(e for e in legacy['events'] if e['key'] == event_key('/events/markers', baseline_code, ''))
+        assert event['trials'] == old['trials']
+        result = analyze_session(session_id=filename, subject_id=filename, data=session.channels[0].data,
+            sample_rate=session.sample_rate, unit='volts', channel_id='0', events=catalogue['events'],
+            settings=dict(method='event_average', event_keys=[event['key']], tmin=0, tmax=.002))
+        sample = 100 + baseline_code * 100
+        np.testing.assert_allclose(result['events'][0]['mean'], .1 + np.arange(sample, sample + 2) * .002)
+
+
+def test_shortcut_names_resolve_local_codes_and_reserve_observed_undefined_codes(tmp_path):
+    source = keyboard_recording(tmp_path / 'permuted.nwb', ('3', '1', '2'))
+    with h5py.File(source, 'r+') as file:
+        # Code4 is observed but has no definition, and the row is deleted.
+        file['events/markers/event_type'][-1] = 4
+        file['events/markers/deleted'][-1] = 1
+    settings = dict(event_identity='keyboard_shortcut_v1', event_names=[
+        dict(shortcut='1', name='baseline'), dict(shortcut='9', name='blow')])
+    changes = resolve_event_names(source, settings)
+    assert changes == [dict(table='/events/markers', code=2, name='baseline', shortcut='1'),
+                       dict(table='/events/markers', code=5, name='blow', shortcut='9')]
+    before = sha(source)
+    capability = validate_annotated_copy(source, event_names=changes, expected_source_sha256=before, operation_id='keys')
+    assert capability['schema_version'] == 'spikertools.annotation-capability.v1'
+    assert capability['source_sha256'] == before and capability['new_unit_id'] is None
+    assert capability['event_names'] == changes and sha(source) == before
+    assert list(tmp_path.iterdir()) == [source]
+    output = tmp_path / 'named.nwb'
+    receipt = write_annotated_copy(source, output, event_names=changes, expected_source_sha256=before, operation_id='keys')
+    assert receipt['event_names'] == capability['event_names']
+    loaded = Session(output)
+    definitions = {d['shortcut']: d for d in loaded.event_definitions}
+    assert definitions['1']['code'] == 2 and definitions['1']['name'] == 'baseline'
+    assert definitions['9']['code'] == 5 and definitions['9']['occurrences'] == 0
+    with h5py.File(source) as original, h5py.File(output) as copied:
+        for column in ('event_type', 'timestamp', 'deleted'):
+            np.testing.assert_array_equal(original[f'events/markers/{column}'][:], copied[f'events/markers/{column}'][:])
+    assert sha(source) == before
+
+
+def test_shortcut_notes_are_separate_unbound_events_stay_legacy_and_case_is_exact(tmp_path):
+    source = native_meanings_links(recording(tmp_path / 'notes.nwb'))
+    with h5py.File(source, 'r+') as file:
+        file['events/markers/meanings_tables/event_type_meanings/shortcut'][:] = ['A', 'a']
+        file['events/markers/meanings_tables/event_type_meanings/meaning'][0] = ''
+    session = Session(source)
+    events = session_catalogue(session, event_identity='keyboard_shortcut_v1')['events']
+    assert [e['key'] for e in events] == ['["shortcut","A"]', '["shortcut","A","Free text"]']
+    assert [e['label'] for e in events] == ['Key A', 'Free text']
+    changes = resolve_event_names(source, dict(event_identity='keyboard_shortcut_v1', event_names=[dict(shortcut='a', name='Other')]))
+    assert changes[0]['code'] == 2
+    with h5py.File(source, 'r+') as file:
+        file['events/markers/meanings_tables/event_type_meanings/shortcut'][0] = ''
+    events = session_catalogue(Session(source), event_identity='keyboard_shortcut_v1')['events']
+    assert all(e['identity_status'] == 'unbound' and e['shortcut'] is None for e in events)
+    assert events[0]['key'] == event_key('/events/markers', 1, '')
+
+
+def test_missing_shortcut_without_tables_creates_only_definition_and_ambiguous_tables_fail(tmp_path):
+    source = recording(tmp_path / 'empty.nwb', events=False, units=False)
+    settings = dict(event_identity='keyboard_shortcut_v1', event_names=[dict(shortcut='9', name='Blow')])
+    changes = resolve_event_names(source, settings)
+    assert changes == [dict(table='/events/markers', code=1, name='Blow', shortcut='9')]
+    output = tmp_path / 'named.nwb'
+    write_annotated_copy(source, output, event_names=changes, operation_id='unused')
+    assert len(Session(output).events) == 0
+    assert Session(output).event_definitions[0]['occurrences'] == 0
+    source = recording(tmp_path / 'two-tables.nwb', units=False)
+    with h5py.File(source, 'r+') as file:
+        file.copy('events/markers', 'events/other')
+        other = file['events/other']
+        other['meanings_tables/event_type_meanings'].attrs['target'] = other['event_type'].ref
+        other['meanings_tables/event_type_meanings/shortcut'][:] = ['', '']
+    with pytest.raises(AnalysisError) as error:
+        resolve_event_names(source, settings)
+    assert error.value.code == 'ambiguous_event_table'
+
+
+@pytest.mark.parametrize('shortcut,code', [('1', 'ambiguous_event_binding'), ('12', 'invalid_event_binding')])
+def test_duplicate_or_malformed_shortcut_never_chooses_first_definition(tmp_path, shortcut, code):
+    source = recording(tmp_path / 'ambiguous.nwb')
+    with h5py.File(source, 'r+') as file:
+        file['events/markers/meanings_tables/event_type_meanings/shortcut'][1] = shortcut
+    settings = dict(event_identity='keyboard_shortcut_v1', event_names=[dict(shortcut='1', name='Baseline')])
+    for call in (lambda: session_catalogue(Session(source), event_identity='keyboard_shortcut_v1'),
+                 lambda: resolve_event_names(source, settings)):
+        with pytest.raises(AnalysisError) as error:
+            call()
+        assert error.value.code == code
+    # The default reader remains compatible, with no implicit cross-file remap.
+    assert len(session_catalogue(Session(source))['events']) == 2
+
+
+@pytest.mark.parametrize('settings', [
+    {'event_names': [{'table': '/events/markers', 'code': 1, 'name': 'Baseline'}]},
+    {'event_identity': 'keyboard_shortcut_v1', 'event_names': [{'code': 1, 'name': 'Baseline'}]},
+    {'event_identity': 'keyboard_shortcut_v1', 'event_names': [{'shortcut': '1', 'name': 'Baseline'}, {'shortcut': '1', 'name': 'Duplicate'}]},
+])
+def test_resolver_rejects_legacy_payload_and_duplicate_requests(tmp_path, settings):
+    source = recording(tmp_path / 'source.nwb')
+    before = sha(source)
+    with pytest.raises(AnalysisError):
+        resolve_event_names(source, settings)
+    assert sha(source) == before
+
+
+def test_absent_and_empty_notes_share_shortcut_key_without_rewriting_legacy_identity(tmp_path):
+    blank = keyboard_recording(tmp_path / 'blank.nwb')
+    absent = keyboard_recording(tmp_path / 'absent.nwb')
+    with h5py.File(absent, 'r+') as file:
+        del file['events/markers/annotation']
+        file['events/markers'].attrs['colnames'] = np.asarray(
+            ['timestamp', 'event_type', 'deleted', 'source', 'channel'], dtype=h5py.string_dtype('utf-8'))
+    blank_events = session_catalogue(Session(blank), event_identity='keyboard_shortcut_v1')['events']
+    absent_events = session_catalogue(Session(absent), event_identity='keyboard_shortcut_v1')['events']
+    assert [e['key'] for e in blank_events] == [e['key'] for e in absent_events]
+    assert blank_events[0]['source_events'][0]['legacy_key'] == event_key('/events/markers', 1, '')
+    assert absent_events[0]['source_events'][0]['legacy_key'] == event_key('/events/markers', 1, None)
+
+
+@pytest.mark.parametrize('variant', ['wrong_target', 'chain', 'external', 'hard_alias', 'wrong_kind'])
+def test_native_link_allowance_does_not_accept_arbitrary_links(tmp_path, variant):
+    source = native_meanings_links(recording(tmp_path / 'source.nwb'))
+    with h5py.File(source, 'r+') as file:
+        meanings = file['events/markers/meanings_tables/event_type_meanings']
+        del meanings['target']
+        if variant == 'wrong_target':
+            meanings['target'] = h5py.SoftLink('/events/markers/source')
+        elif variant == 'chain':
+            table = file['events/markers']
+            table.move('event_type', 'actual_event_type')
+            table['event_type'] = h5py.SoftLink('/events/markers/actual_event_type')
+            meanings['target'] = h5py.SoftLink('/events/markers/event_type')
+        elif variant == 'external':
+            meanings['target'] = h5py.ExternalLink('foreign.nwb', '/events/markers/event_type')
+        elif variant == 'hard_alias':
+            meanings['target'] = file['events/markers/event_type']
+        elif variant == 'wrong_kind':
+            meanings['target'] = h5py.SoftLink('/events/markers/event_type')
+            meanings.attrs['neurodata_type'] = 'DynamicTable'
+    before = sha(source)
+    with pytest.raises(AnalysisError) as error:
+        validate_annotated_copy(source, operation_id='reject', event_names=[dict(table='/events/markers', code=1, name='Baseline')])
+    assert error.value.code == 'unsupported_layout'
+    assert sha(source) == before and list(tmp_path.iterdir()) == [source]
+
+
+def test_exact_preflight_rejects_spike_specific_layout_and_source_changes(tmp_path):
+    source = recording(tmp_path / 'source.nwb')
+    detection = result_for(source)
+    before = sha(source)
+    capability = validate_annotated_copy(source, detection=detection, channel_index=0,
+                                         expected_source_sha256=before, operation_id='detect')
+    assert capability['new_unit_id'] == '18' and sha(source) == before
+    with h5py.File(source, 'r+') as file:
+        file['units'].create_dataset('unknown', data=[3])
+    # Event-only edits preserve unknown unit data; detection must not extend it.
+    validate_annotated_copy(source, operation_id='names', event_names=[dict(table='/events/markers', code=1, name='Baseline')])
+    with pytest.raises(AnalysisError) as error:
+        validate_annotated_copy(source, detection=detection, channel_index=0, operation_id='detect')
+    assert error.value.code == 'unsupported_layout'
+    with pytest.raises(AnalysisError) as error:
+        validate_annotated_copy(source, expected_source_sha256=before, operation_id='names',
+                                event_names=[dict(table='/events/markers', code=1, name='Baseline')])
+    assert error.value.code == 'source_changed'
 
 
 def test_negative_calibration_and_zero_detection_copy(tmp_path):

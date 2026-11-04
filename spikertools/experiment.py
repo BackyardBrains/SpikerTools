@@ -79,6 +79,30 @@ def event_key(table, event_type=None, annotation=None):
                            separators=(',', ':'), allow_nan=False), 'event key')
 
 
+def _event_bindings(definitions):
+    """Map only explicit, unique case-sensitive keys; never infer from codes."""
+    if not isinstance(definitions, list) or len(definitions) > MAX_EVENTS:
+        _fail('bounds', 'At most 64 event definitions are supported for shortcut identities.')
+    by_source, by_shortcut = {}, {}
+    for definition in definitions:
+        if not isinstance(definition, dict):
+            _fail('invalid_event_binding', 'Invalid event definition metadata.')
+        table, code, shortcut = (definition.get(k) for k in ('table', 'code', 'shortcut'))
+        if (not isinstance(table, str) or isinstance(code, bool) or not isinstance(code, int)
+                or not isinstance(shortcut, str) or len(shortcut) > 1
+                or (shortcut and (ord(shortcut) < 32 or ord(shortcut) == 127))):
+            _fail('invalid_event_binding', 'Event bindings require an explicit single-character shortcut.')
+        source = (table, code)
+        if source in by_source:
+            _fail('ambiguous_event_binding', 'An event has multiple definitions.')
+        by_source[source] = shortcut or None
+        if shortcut:
+            if shortcut in by_shortcut:
+                _fail('ambiguous_event_binding', 'A keyboard shortcut is bound to more than one event.', shortcut=shortcut)
+            by_shortcut[shortcut] = source
+    return by_source, by_shortcut
+
+
 def _settings(settings):
     if not isinstance(settings, Mapping):
         _fail('invalid_input', 'settings must be an object.')
@@ -523,17 +547,29 @@ def aggregate_results(results):
                 sessions=copy.deepcopy(list(results)), events=output)
 
 
-def session_catalogue(session):
+def session_catalogue(session, *, event_identity='table_code_annotation_v1'):
     """Expose channel/unit/event identities, preserving NWB source row identity.
 
     A mutated NWB Event.timestamps list cannot safely reuse its original row IDs;
     reject it instead of attaching exclusions to different occurrences.
     """
-    events = []
+    if event_identity not in ('table_code_annotation_v1', 'keyboard_shortcut_v1'):
+        _fail('invalid_input', 'Unknown event identity version.')
+    shortcut_mode = event_identity == 'keyboard_shortcut_v1'
+    definitions = getattr(session, 'event_definitions', [])
+    bindings = _event_bindings(definitions)[0] if shortcut_mode else {}
+    meanings = {(d['table'], d['code']): d.get('name', '') for d in definitions} if shortcut_mode else {}
+    events, grouped = [], {}
     for event in session.events:
         meta = getattr(event, 'metadata', {})
-        key = event_key(meta.get('table', 'legacy'), meta.get('event_type'),
-                        meta.get('annotation') if 'table' in meta else event.name)
+        table, code = meta.get('table', 'legacy'), meta.get('event_type')
+        annotation = meta.get('annotation') if 'table' in meta else event.name
+        legacy_key = event_key(table, code, annotation)
+        shortcut = bindings.get((table, code))
+        key = legacy_key
+        if shortcut_mode and shortcut:
+            parts = ['shortcut', shortcut] + ([annotation] if annotation else [])
+            key = _text(json.dumps(parts, ensure_ascii=False, separators=(',', ':')), 'event key')
         occurrences = getattr(event, 'occurrences', None)
         if occurrences is not None:
             if len(occurrences) != len(event.timestamps) or any(
@@ -545,10 +581,23 @@ def session_catalogue(session):
                       for row, stamp in zip(occurrences, event.timestamps)]
         else:
             trials = [dict(id='row:{}'.format(i), time=float(stamp)) for i, stamp in enumerate(event.timestamps)]
-        events.append(dict(key=key, label=event.name, trials=trials))
+        if shortcut_mode:
+            provenance = dict(table=table, code=code, annotation=annotation, legacy_key=legacy_key)
+            if key in grouped:
+                grouped[key]['trials'].extend(trials)
+                grouped[key]['source_events'].append(provenance)
+            else:
+                label = (annotation or meanings.get((table, code)) or 'Key ' + shortcut) if shortcut else event.name
+                item = dict(key=key, label=label, trials=trials,
+                            identity_status='bound' if shortcut else 'unbound', shortcut=shortcut,
+                            source_events=[provenance])
+                events.append(item)
+                grouped[key] = item
+        else:
+            events.append(dict(key=key, label=event.name, trials=trials))
     if events:
         _events(events, [e['key'] for e in events], {})
-    return dict(session_id=getattr(session, 'session_id', None),
+    return dict(event_identity=event_identity, session_id=getattr(session, 'session_id', None),
                 subject_id=getattr(session, 'subject_id', None),
                 annotation_root_source_sha256=getattr(session, 'annotation_root_source_sha256', None),
                 data_loaded=getattr(session, 'data_loaded', True),

@@ -1,14 +1,17 @@
 """Exercise the NWB reader and the same numerical path used by file workers."""
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
 pytest.importorskip('pynwb')
+import h5py
 
 from spikertools import AnalysisError, Experiment, Session
 from spikertools.experiment import event_key, session_catalogue
+from spikertools.nwb import read_nwb
 from test_nwb import write_recording
 
 
@@ -69,3 +72,51 @@ def test_optional_invalid_or_oversized_display_metadata_stays_absent(tmp_path):
     write_recording(path, display=['{"v":1,"prep":{"kind":"unknown"}}', 'x' * 513])
     catalog = session_catalogue(Session(path))
     assert [c['signal_role'] for c in catalog['channels']] == [None, None]
+
+
+@pytest.mark.parametrize('timing', ['rate', 'timestamps'])
+def test_metadata_read_never_reads_signal_or_allocates_full_channel_clocks(tmp_path, monkeypatch, timing):
+    path = tmp_path / 'metadata.nwb'
+    write_recording(path, timing=timing, subject_id='subject', session_id='session')
+    expected = Session(path)
+    original_getitem = h5py.Dataset.__getitem__
+    timestamp_reads = []
+
+    def guarded_read(dataset, index, *args, **kwargs):
+        if dataset.name == '/acquisition/ElectricalSeries1/data':
+            pytest.fail('Metadata-only read accessed the signal dataset')
+        if dataset.name == '/acquisition/ElectricalSeries1/timestamps' and isinstance(index, slice):
+            assert index.start is not None and index.stop is not None
+            assert index.stop - index.start <= 1024
+            timestamp_reads.append(index)
+        return original_getitem(dataset, index, *args, **kwargs)
+
+    monkeypatch.setattr(h5py.Dataset, '__getitem__', guarded_read)
+    monkeypatch.setattr('spikertools.nwb.CLOCK_CHUNK_SAMPLES', 1024)
+    metadata = read_nwb(path, load_data=False)
+    assert metadata['data'] is None
+    assert metadata['sample_count'] == 8192
+    assert metadata['duration_seconds'] == 8
+    assert all(len(c.data) == len(c.time) == 0 for c in metadata['channels'])
+    catalogue = session_catalogue(SimpleNamespace(**metadata))
+    assert metadata['data_loaded'] is False and catalogue['data_loaded'] is False
+    expected_catalogue = session_catalogue(expected)
+    expected_catalogue['data_loaded'] = False
+    assert catalogue == expected_catalogue
+    assert [n.timestamps for n in metadata['neurons']] == [n.timestamps for n in expected.neurons]
+    if timing == 'timestamps':
+        assert len(timestamp_reads) == 8
+    with pytest.raises(AnalysisError, match='metadata only'):
+        Experiment([SimpleNamespace(**metadata)]).analyze(dict(
+            method='event_average', event_keys=[catalogue['events'][0]['key']], tmin=0, tmax=.1))
+
+
+def test_metadata_clock_validation_catches_chunk_boundary_discontinuity(tmp_path, monkeypatch):
+    path = tmp_path / 'clock.nwb'
+    write_recording(path, timing='timestamps')
+    with h5py.File(path, 'r+') as file:
+        times = file['acquisition/ElectricalSeries1/timestamps']
+        times[1024] = times[1023]
+    monkeypatch.setattr('spikertools.nwb.CLOCK_CHUNK_SAMPLES', 1024)
+    with pytest.raises(ValueError, match='increasing finite times'):
+        read_nwb(path, load_data=False)

@@ -371,6 +371,18 @@ for PETH if duration is explicit. When data exists, duration must equal
 `missing_event`, `missing_spikes`, `spike_channel_mismatch`, `duplicate_subject`,
 `incompatible_grid`, `incompatible_units`, `bounds` and `no_valid_trials`.
 
+`spikertools.nwb.read_nwb(path, series_name=None, load_data=False)` provides the
+reader's model dictionary without reading signal samples or allocating full
+per-channel clocks. It includes `sample_count`, `duration_seconds`, calibration,
+event row identities and saved spike times; explicit timestamp clocks are validated
+in chunks of at most 65,536 samples. `data` is null, channel data/time arrays are
+empty, and `data_loaded=False` marks these objects as catalogue-only. Passing such
+a session to `Experiment.analyze` fails with `metadata_only`; use a bounded reader
+for the selected calibrated channel and call `analyze_session` instead. PETH can
+use `data=None` and explicit duration. Default `load_data=True` preserves the eager
+local `Session` behavior. Events and saved spikes are still loaded into memory, so
+the web service must enforce their input bounds before calling this reader.
+
 Session output has `schema_version="spikertools.session-analysis.v1"`, the IDs,
 sample rate/duration/unit, normalized `settings`, `processing` provenance and an
 `events` list. Each event has `key`, `label`, `time`, `mean` (or null when empty),

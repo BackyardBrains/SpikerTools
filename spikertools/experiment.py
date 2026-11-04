@@ -515,9 +515,14 @@ def session_catalogue(session):
     if events:
         _events(events, [e['key'] for e in events], {})
     return dict(session_id=getattr(session, 'session_id', None),
-                subject_id=getattr(session, 'subject_id', None), events=events,
+                subject_id=getattr(session, 'subject_id', None),
+                data_loaded=getattr(session, 'data_loaded', True),
+                sample_count=getattr(session, 'sample_count', None),
+                duration_seconds=getattr(session, 'duration_seconds', None), events=events,
                 channels=[dict(id=str(c.number), name=c.name, sample_rate=float(c.sample_rate),
                                unit=getattr(c, 'unit', session.unit),
+                               calibration={key: getattr(c, 'metadata', {}).get(key)
+                                            for key in ('conversion', 'channel_conversion', 'offset')},
                                signal_role=getattr(c, 'metadata', {}).get('signal_role'),
                                recorded_filters=getattr(c, 'metadata', {}).get('recorded_filters'))
                           for c in session.channels],
@@ -582,6 +587,8 @@ class Experiment:
         for session, subject_id, session_id in zip(self.sessions, self.subject_ids, self.session_ids):
             if session_id in excluded_session_ids:
                 continue
+            if getattr(session, 'data_loaded', True) is False:
+                _fail('metadata_only', 'This session contains metadata only; load its samples or pass a selected channel to analyze_session.')
             choice = channel.get(session_id) if isinstance(channel, Mapping) else channel
             if isinstance(choice, bool) or not isinstance(choice, int) or not 0 <= choice < len(session.channels):
                 _fail('invalid_input', 'Select a valid channel position for each included session.')

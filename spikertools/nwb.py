@@ -11,6 +11,8 @@ import numpy as np
 
 from .models import Channel, Channels, Event, Events, Neuron
 
+CLOCK_CHUNK_SAMPLES = 65_536
+
 
 def _text(value):
     return value.decode('utf-8') if isinstance(value, bytes) else str(value)
@@ -76,18 +78,31 @@ def _timing(group, samples):
     if 'timestamps' in group:
         if 'starting_time' in group:
             raise ValueError('NWB signal has conflicting timestamps and starting_time.')
-        times = _vector(group, 'timestamps', samples).astype(float)
-        if samples < 2 or not np.all(np.isfinite(times)) or np.any(np.diff(times) <= 0):
+        dataset = group['timestamps']
+        if dataset.shape != (samples,) or dataset.dtype.kind not in 'iuf' or samples < 2:
             raise ValueError('NWB timestamps must contain at least two increasing finite times.')
-        start = times[0]
-        interval = (times[-1] - start) / (samples - 1)
-        expected = start + np.arange(samples) * interval
-        # No resampling: existing filters, FFTs and epochs require a regular clock.
-        if not np.allclose(times, expected, rtol=0, atol=max(1e-9, interval * 0.001)):
-            raise ValueError('Irregular NWB timestamps are unsupported; resample explicitly first.')
+        start = _scalar(dataset[0], 'first timestamp')
+        end = _scalar(dataset[-1], 'last timestamp')
+        interval = (end - start) / (samples - 1)
+        if not np.isfinite(interval) or interval <= 0:
+            raise ValueError('NWB timestamps must contain at least two increasing finite times.')
         rate = 1 / interval
         if not np.isfinite(rate) or rate <= 0:
             raise ValueError('NWB sample rate must be finite and positive.')
+        # Validate the full clock in bounded chunks, including adjacent chunk
+        # boundaries. Metadata-only reads must not allocate the full time axis.
+        previous = None
+        for first in range(0, samples, CLOCK_CHUNK_SAMPLES):
+            last = min(samples, first + CLOCK_CHUNK_SAMPLES)
+            times = np.asarray(dataset[first:last], dtype=float)
+            if (not np.all(np.isfinite(times)) or np.any(np.diff(times) <= 0)
+                    or (previous is not None and times[0] <= previous)):
+                raise ValueError('NWB timestamps must contain at least two increasing finite times.')
+            expected = start + np.arange(first, last) * interval
+            # No resampling: existing filters, FFTs and epochs need a regular clock.
+            if not np.allclose(times, expected, rtol=0, atol=max(1e-9, interval * 0.001)):
+                raise ValueError('Irregular NWB timestamps are unsupported; resample explicitly first.')
+            previous = times[-1]
         return float(start), float(rate)
     if 'starting_time' not in group:
         raise ValueError('NWB signal has neither timestamps nor starting_time/rate.')
@@ -192,7 +207,17 @@ def _neurons(nwb, start, channel_rows):
     return neurons
 
 
-def read_nwb(path, series_name=None):
+def read_nwb(path, series_name=None, *, load_data=True):
+    """Read NWB models, optionally without any signal samples or channel clocks.
+
+    ``load_data=False`` is a metadata adapter for bounded file workers. It returns
+    the same dict with ``data=None`` and empty Channel.data/time arrays, alongside
+    ``sample_count`` and ``duration_seconds``. Events and saved spike trains remain
+    available. The caller can read one calibrated channel with its own bounded
+    reader and pass it to ``analyze_session``. This function performs no remote IO.
+    """
+    if not isinstance(load_data, bool):
+        raise ValueError('load_data must be a bool.')
     try:
         import h5py
         from pynwb import NWBHDF5IO
@@ -226,10 +251,12 @@ def read_nwb(path, series_name=None):
         factors = np.ones(count) if series.channel_conversion is None else np.asarray(series.channel_conversion[:], dtype=float)
         if factors.shape != (count,) or not np.all(np.isfinite(factors * conversion)):
             raise ValueError('NWB channel_conversion must have one finite value per channel.')
-        data = np.asarray(dataset[:], dtype=np.float64)
-        data *= conversion
-        data *= factors if data.ndim == 2 else factors[0]
-        data += offset
+        data = None
+        if load_data:
+            data = np.asarray(dataset[:], dtype=np.float64)
+            data *= conversion
+            data *= factors if data.ndim == 2 else factors[0]
+            data += offset
 
         electrodes = series.electrodes.table
         rows = np.asarray(series.electrodes.data[:])
@@ -239,7 +266,8 @@ def read_nwb(path, series_name=None):
         for number, row in enumerate(rows):
             label = _text(electrodes['label'][row]) if 'label' in electrodes.colnames else ''
             name = _unique_name(label or 'Channel {}'.format(number), names, 'channel ' + str(number))
-            channel = Channel(data if data.ndim == 1 else data[:, number], rate, number, name)
+            values = np.empty(0) if data is None else (data if data.ndim == 1 else data[:, number])
+            channel = Channel(values, rate, number, name)
             channel.unit = 'volts'
             channel.metadata = {'electrode_row': int(row), 'electrode_id': int(electrodes.id[row]),
                                 'label': label, 'conversion': conversion,
@@ -256,7 +284,8 @@ def read_nwb(path, series_name=None):
                         description=series.description, comments=series.comments,
                         session_id=nwb.session_id,
                         subject_id=nwb.subject.subject_id if nwb.subject is not None else None)
-        return dict(format='nwb', sample_rate=rate, data=data, starting_time=start,
+        return dict(format='nwb', sample_rate=rate, data=data, data_loaded=load_data, starting_time=start,
+                    sample_count=samples, duration_seconds=samples / rate,
                     session_id=metadata['session_id'], subject_id=metadata['subject_id'],
                     unit='volts', channels=channels, events=_events(file, start),
                     neurons=_neurons(nwb, start, rows.tolist()), metadata=metadata,

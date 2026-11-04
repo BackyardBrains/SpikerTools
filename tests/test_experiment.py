@@ -123,6 +123,45 @@ def test_rms_requires_padding_even_when_visible_response_is_complete():
     assert result['processing']['rms_window_samples'] == 20
 
 
+@pytest.mark.parametrize('width', [1, 3, 10, 101])
+def test_rms_small_signal_survives_large_artifact_outside_its_window(width):
+    signal = np.full(1000, 1e-8)
+    signal[110] = 1.
+    result = analyze(signal, events=[event(times=(1.,))], settings={
+        'method': 'rms', 'rms_window': width / 100, 'tmin': 0., 'tmax': 2.})
+    # Sample150's actual window is far beyond the impulse for every chosen width.
+    assert result['events'][0]['mean'][150] == pytest.approx(1e-8, rel=1e-12, abs=1e-22)
+    assert result['processing']['rms_algorithm'] == 'block_prefix_suffix_hypot'
+
+
+def test_rms_large_finite_values_do_not_overflow_squared_samples():
+    result = analyze(np.full(1000, 1e200), settings={'method': 'rms', 'rms_window': .1})
+    np.testing.assert_allclose(result['events'][0]['mean'], 1e200, rtol=1e-12)
+
+
+@pytest.mark.parametrize('method,field,value', [
+    ('rms', 'rms_window_samples', 999),
+    ('rms', 'rms_left_samples', 999),
+    ('rms', 'rms_algorithm', 'unknown'),
+    ('peth', 'bin_widths', [999]),
+    ('peth', 'bin_edges', [-.1, .2]),
+    ('event_average', 'alignment', 'unknown'),
+])
+def test_corrupt_derived_processing_metadata_fails(method, field, value):
+    result = peth() if method == 'peth' else analyze(settings={'method': method})
+    result['processing'][field] = value
+    assert_error('invalid_result', aggregate_results, [result])
+
+
+def test_corrupt_grid_and_source_units_fail_even_when_individually_plausible():
+    result = analyze(settings={'max_output_points': 2})
+    result['events'][0]['time'] = [-.09, .19]
+    assert_error('invalid_result', aggregate_results, [result])
+    result = analyze()
+    result['processing']['source_unit'] = 'dimensionless'
+    assert_error('invalid_result', aggregate_results, [result])
+
+
 def peth(**kwargs):
     args = dict(settings={'method': 'peth', 'tmin': -.25, 'tmax': .3, 'bin_size': .2},
                 events=[event(times=(1,))], spike_times=[.75, .8, .95, 1.15, 1.3],

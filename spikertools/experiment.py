@@ -190,16 +190,66 @@ def _rms(values, center, bounds, width):
     lo, hi = bounds
     left, right = width // 2, width - width // 2
     signal = values[center + lo - left:center + hi + right - 1]
-    # Subtracting cumulative sums can lose precision for huge dynamic range; the
-    # scale limits overflow while keeping the operation linear in epoch length.
-    scale = np.max(np.abs(signal))
-    if not np.isfinite(scale):
+    if not np.isfinite(signal).all():
         return None
-    if scale == 0:
-        return np.zeros(hi - lo)
-    squared = np.square(signal / scale)
-    sums = np.concatenate(([0.], np.cumsum(squared)))
-    return np.sqrt(np.maximum(0., (sums[width:] - sums[:-width]) / width)) * scale
+    if width == 1:
+        return np.abs(signal)
+    # Every fixed-width window is a suffix of one block plus a prefix of the
+    # next. Hypot accumulation adds positive contributions, never subtracting a
+    # large earlier artifact from a cumulative sum. This is linear work even for
+    # large windows. Normalize before accumulation to avoid norm overflow.
+    normalized = np.abs(signal) / math.sqrt(width)
+    if np.any((signal != 0) & (normalized == 0)):
+        _fail('precision_loss', 'RMS samples are below floating-point resolution for this window.')
+    blocks = np.zeros((math.ceil(len(signal) / width), width))
+    blocks.ravel()[:len(signal)] = normalized
+    prefixes = np.hypot.accumulate(blocks, axis=1)
+    suffixes = np.hypot.accumulate(blocks[:, ::-1], axis=1)[:, ::-1]
+    starts = np.arange(hi - lo)
+    rows, offsets = np.divmod(starts, width)
+    result = suffixes[rows, offsets].copy()
+    across = offsets != 0
+    # The final padded block can never be used past the input's last real sample.
+    result[across] = np.hypot(result[across], prefixes[rows[across] + 1, offsets[across] - 1])
+    return result
+
+
+def _layout(config, rate):
+    """Derive the exact grid and processing facts from settings, including caches."""
+    tmin, tmax = config['tmin'], config['tmax']
+    if config['method'] == 'peth':
+        bin_count = (tmax - tmin) / config['bin_size']
+        if not math.isfinite(bin_count) or bin_count > config['max_output_points'] + 1e-12:
+            _fail('bounds', 'PETH bin count exceeds max_output_points; increase bin_size.')
+        bins = math.ceil(bin_count - 1e-12)
+        if not 1 <= bins <= config['max_output_points']:
+            _fail('bounds', 'PETH bin count exceeds max_output_points; increase bin_size.')
+        edges = tmin + np.arange(bins + 1) * config['bin_size']
+        edges[-1] = tmax
+        widths = np.diff(edges)
+        if np.any(widths <= 0):
+            _fail('bounds', 'PETH bins must have positive widths.')
+        return dict(time=(edges[:-1] + edges[1:]) / 2, edges=edges, widths=widths,
+                    work=bins + 1, processing=dict(alignment='exact_event_time', interval='[start,end)',
+                    output='counts_per_true_bin_width', bin_edges=edges.tolist(), bin_widths=widths.tolist()))
+    bounds = _offsets(tmin, tmax, rate)
+    baseline = None if config['baseline'] is None else _offsets(*config['baseline'], rate)
+    width = max(1, int(math.floor(config['rms_window'] * rate + .5))) if config['method'] == 'rms' else 1
+    if width > MAX_EPOCH_SAMPLES:
+        _fail('bounds', 'RMS window exceeds 2000000 native samples.')
+    length = bounds[1] - bounds[0]
+    cuts = np.linspace(0, length, min(length, config['max_output_points']) + 1, dtype=int)
+    processing = dict(alignment='nearest_sample_half_up', interval='[start,end)',
+                      output='adjacent_bin_means_after_full_sample_calculation')
+    if config['method'] == 'rms':
+        processing.update(rms_window_samples=width, rms_window_seconds=width / rate,
+                          rms_left_samples=width // 2, rms_right_samples=width - width // 2 - 1,
+                          rms_algorithm='block_prefix_suffix_hypot')
+    work = length + width
+    if baseline is not None:
+        work += baseline[1] - baseline[0] + width
+    return dict(time=_compress(np.arange(*bounds, dtype=float) / rate, cuts), bounds=bounds,
+                baseline_bounds=baseline, width=width, cuts=cuts, processing=processing, work=work)
 
 
 def analyze_session(*, session_id, subject_id, data, sample_rate, unit, channel_id,
@@ -239,9 +289,9 @@ def analyze_session(*, session_id, subject_id, data, sample_rate, unit, channel_
     if not math.isfinite(duration) or duration <= 0:
         _fail('bounds', 'Recording duration must be finite and positive.')
     method, tmin, tmax = config['method'], config['tmin'], config['tmax']
-    processing = dict(alignment='nearest_sample_half_up', interval='[start,end)',
-                      output='adjacent_bin_means_after_full_sample_calculation',
-                      source_unit=unit, spike_unit_id=None, spike_channel_ids=[])
+    layout = _layout(config, rate)
+    time = layout['time']
+    processing = dict(layout['processing'], source_unit=unit, spike_unit_id=None, spike_channel_ids=[])
     baseline_bounds = None
     if method == 'peth':
         if spike_times is None:
@@ -254,45 +304,17 @@ def analyze_session(*, session_id, subject_id, data, sample_rate, unit, channel_
         if np.any(spikes < 0) or np.any(spikes >= duration):
             _fail('invalid_input', 'Spike times must be within [0,duration).')
         spikes = np.sort(spikes)
-        bin_count = (tmax - tmin) / config['bin_size']
-        if not math.isfinite(bin_count) or bin_count > config['max_output_points'] + 1e-12:
-            _fail('bounds', 'PETH bin count exceeds max_output_points; increase bin_size.')
-        bins = math.ceil(bin_count - 1e-12)
-        if not 1 <= bins <= config['max_output_points']:
-            _fail('bounds', 'PETH bin count exceeds max_output_points; increase bin_size.')
-        edges = tmin + np.arange(bins + 1) * config['bin_size']
-        edges[-1] = tmax
-        widths = np.diff(edges)
-        if np.any(widths <= 0):
-            _fail('bounds', 'PETH bins must have positive widths.')
-        time = (edges[:-1] + edges[1:]) / 2
+        edges, widths = layout['edges'], layout['widths']
         output_unit = 'spikes/s'
-        processing.update(alignment='exact_event_time', output='counts_per_true_bin_width',
-                          spike_unit_id=spike_unit_id, spike_channel_ids=links,
-                          bin_edges=edges.tolist(), bin_widths=widths.tolist())
-        work_per_trial = bins + 1
+        processing.update(spike_unit_id=spike_unit_id, spike_channel_ids=links)
     else:
         if values is None:
             _fail('invalid_input', 'Signal data is required for event_average and rms.')
-        bounds = _offsets(tmin, tmax, rate)
-        if config['baseline'] is not None:
-            baseline_bounds = _offsets(*config['baseline'], rate)
-        width = max(1, int(math.floor(config['rms_window'] * rate + .5))) if method == 'rms' else 1
-        if width > MAX_EPOCH_SAMPLES:
-            _fail('bounds', 'RMS window exceeds 2000000 native samples.')
+        bounds, baseline_bounds, width, cuts = (layout[key] for key in ('bounds', 'baseline_bounds', 'width', 'cuts'))
         left, right = width // 2, width - width // 2
-        length = bounds[1] - bounds[0]
-        cuts = np.linspace(0, length, min(length, config['max_output_points']) + 1, dtype=int)
-        time = _compress(np.arange(*bounds, dtype=float) / rate, cuts)
-        if method == 'rms':
-            processing.update(rms_window_samples=width, rms_window_seconds=width / rate,
-                              rms_left_samples=left, rms_right_samples=right - 1)
-        work_per_trial = length + width
-        if baseline_bounds is not None:
-            work_per_trial += baseline_bounds[1] - baseline_bounds[0] + width
     if len(selected) * len(time) > MAX_RESULT_VALUES:
         _fail('bounds', 'Too many output values.')
-    if work_per_trial * sum(len(e['trials']) for e in selected) > MAX_WORK_SAMPLES:
+    if layout['work'] * sum(len(e['trials']) for e in selected) > MAX_WORK_SAMPLES:
         _fail('bounds', 'Selected analysis exceeds the 200 million sample-work limit.')
     output, retained = [], 0
     for event in selected:
@@ -379,6 +401,16 @@ def _validate_result(result):
     processing = result.get('processing')
     if not isinstance(processing, Mapping):
         _fail('invalid_result', 'Cached processing provenance is missing.')
+    layout = _layout(config, rate)
+    if any(processing.get(key) != value for key, value in layout['processing'].items()):
+        _fail('invalid_result', 'Cached processing facts disagree with the settings and sample rate.')
+    if processing.get('source_unit') not in ('volts', 'V', 'mV', 'uV', 'dimensionless', 'ADC counts'):
+        _fail('invalid_result', 'Cached source unit is unsupported.')
+    if config['method'] != 'peth':
+        source_unit = processing['source_unit']
+        canonical_unit = 'volts' if source_unit in ('volts', 'V', 'mV', 'uV') else source_unit
+        if result['unit'] != canonical_unit:
+            _fail('invalid_result', 'Cached source and output units disagree.')
     if config['method'] == 'peth':
         _text(processing.get('spike_unit_id'), 'spike_unit_id')
         links = processing.get('spike_channel_ids')
@@ -394,6 +426,8 @@ def _validate_result(result):
         if (not len(time) or np.any(np.diff(time) <= 0) or time[0] < config['tmin'] - 1e-9 / rate
                 or time[-1] >= config['tmax'] + 1e-9 / rate):
             _fail('invalid_result', 'Invalid cached output grid.')
+        if not np.array_equal(time, layout['time']):
+            _fail('invalid_result', 'Cached output grid disagrees with the settings and sample rate.')
         count = _integer(event.get('trial_count'), 'trial_count', 0, MAX_TRIALS)
         trials = event.get('trials')
         if not isinstance(trials, list) or event.get('trial_total') != len(trials):

@@ -207,7 +207,35 @@ def _neurons(nwb, start, channel_rows):
     return neurons
 
 
-def read_nwb(path, series_name=None, *, load_data=True):
+def _limit(value, default, name):
+    if value is None:
+        return default
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)) or value < 0:
+        raise ValueError('{} must be a nonnegative integer or None.'.format(name))
+    return int(value)
+
+
+def _metadata_limits(file, max_event_rows, max_spike_times, max_units):
+    """Enforce row counts from shapes before PyNWB/model materialization."""
+    count = 0
+    for table in file.get('events', {}).values():
+        if 'timestamp' not in table or len(table['timestamp'].shape) != 1:
+            raise ValueError('NWB event timestamps must be a one-dimensional column.')
+        count += table['timestamp'].shape[0]
+        if max_event_rows is not None and count > max_event_rows:
+            raise ValueError('NWB event rows exceed max_event_rows before materialization.')
+    if 'units' in file:
+        table = file['units']
+        for name, limit in [('id', max_units), ('spike_times', max_spike_times)]:
+            if name in table:
+                if len(table[name].shape) != 1:
+                    raise ValueError('NWB units/{} must be a one-dimensional column.'.format(name))
+                if limit is not None and table[name].shape[0] > limit:
+                    raise ValueError('NWB units/{} exceeds metadata limit before materialization.'.format(name))
+
+
+def read_nwb(path, series_name=None, *, load_data=True, max_event_rows=None,
+             max_spike_times=None, max_units=None, max_channels=None):
     """Read NWB models, optionally without any signal samples or channel clocks.
 
     ``load_data=False`` is a metadata adapter for bounded file workers. It returns
@@ -218,6 +246,10 @@ def read_nwb(path, series_name=None, *, load_data=True):
     """
     if not isinstance(load_data, bool):
         raise ValueError('load_data must be a bool.')
+    max_event_rows = _limit(max_event_rows, None if load_data else 100_000, 'max_event_rows')
+    max_spike_times = _limit(max_spike_times, None if load_data else 10_000_000, 'max_spike_times')
+    max_units = _limit(max_units, None if load_data else 256, 'max_units')
+    max_channels = _limit(max_channels, None if load_data else 64, 'max_channels')
     try:
         import h5py
         from pynwb import NWBHDF5IO
@@ -227,6 +259,7 @@ def read_nwb(path, series_name=None, *, load_data=True):
                           'Install with: pip install "spikertools[nwb]"') from error
 
     with h5py.File(path, 'r') as file, NWBHDF5IO(file=file, mode='r', load_namespaces=False) as io:
+        _metadata_limits(file, max_event_rows, max_spike_times, max_units)
         nwb = io.read()
         candidates = {name: series for name, series in nwb.acquisition.items()
                       if isinstance(series, ElectricalSeries) and not isinstance(series, SpikeEventSeries)}
@@ -245,6 +278,8 @@ def read_nwb(path, series_name=None, *, load_data=True):
             raise ValueError('NWB signal must be a nonempty numeric time-by-channel array.')
         samples = dataset.shape[0]
         count = dataset.shape[1] if dataset.ndim == 2 else 1
+        if max_channels is not None and count > max_channels:
+            raise ValueError('NWB channel count exceeds max_channels before materialization.')
         start, rate = _timing(file['acquisition'][series.name], samples)
         conversion = _scalar(series.conversion, 'conversion')
         offset = _scalar(series.offset, 'offset')

@@ -120,3 +120,26 @@ def test_metadata_clock_validation_catches_chunk_boundary_discontinuity(tmp_path
     monkeypatch.setattr('spikertools.nwb.CLOCK_CHUNK_SAMPLES', 1024)
     with pytest.raises(ValueError, match='increasing finite times'):
         read_nwb(path, load_data=False)
+
+
+@pytest.mark.parametrize('limit', ['max_event_rows', 'max_spike_times', 'max_units'])
+def test_metadata_bounds_reject_before_any_table_samples_are_read(tmp_path, monkeypatch, limit):
+    path = tmp_path / 'bounded.nwb'
+    write_recording(path)
+    original_getitem = h5py.Dataset.__getitem__
+
+    def guarded_read(dataset, index, *args, **kwargs):
+        if dataset.name.startswith(('/events/', '/units/')):
+            pytest.fail('Over-limit file materialized event or spike data')
+        return original_getitem(dataset, index, *args, **kwargs)
+
+    monkeypatch.setattr(h5py.Dataset, '__getitem__', guarded_read)
+    with pytest.raises(ValueError, match='before materialization'):
+        read_nwb(path, load_data=False, **{limit: 1})
+
+
+def test_metadata_channel_limit_and_invalid_limit(recording):
+    with pytest.raises(ValueError, match='max_channels'):
+        read_nwb(recording[0], load_data=False, max_channels=1)
+    with pytest.raises(ValueError, match='nonnegative integer'):
+        read_nwb(recording[0], load_data=False, max_units=True)

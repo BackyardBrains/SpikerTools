@@ -316,7 +316,9 @@ same biological neuron across subjects. This API does not detect new spikes.
 - RMS is calculated **within each trial before averaging**. Its centered window
   has `round(rms_window * sample_rate)` samples (half ties up, minimum one). An
   even window has one more sample before the center; effective size/padding are
-  returned in `processing`. Baseline correction subtracts the trial's baseline
+  returned in `processing`. RMS uses linear-work block prefix/suffix norms, avoiding
+  cancellation after large artifacts. Subnormal values that would underflow during
+  normalization fail explicitly with `precision_loss`. Baseline correction subtracts the trial's baseline
   mean: raw amplitude for event averages, RMS amplitude for RMS. It is not percent
   normalization or division by baseline.
 - The entire response, baseline and RMS padding must exist. Edge or nonfinite
@@ -380,8 +382,13 @@ empty, and `data_loaded=False` marks these objects as catalogue-only. Passing su
 a session to `Experiment.analyze` fails with `metadata_only`; use a bounded reader
 for the selected calibrated channel and call `analyze_session` instead. PETH can
 use `data=None` and explicit duration. Default `load_data=True` preserves the eager
-local `Session` behavior. Events and saved spikes are still loaded into memory, so
-the web service must enforce their input bounds before calling this reader.
+local `Session` behavior. Events and saved spikes are still loaded into memory.
+Metadata-only defaults cap event rows at 100,000, saved spike times at 10 million,
+units at 256 and channels at 64; dataset shapes are checked before materialization.
+Pass `max_event_rows`, `max_spike_times`, `max_units` and `max_channels` to set
+stricter limits. Eager reads retain their existing unlimited behavior unless those
+limits are explicitly set. The web service must additionally bound encoded text
+metadata and total bytes.
 
 Session output has `schema_version="spikertools.session-analysis.v1"`, the IDs,
 sample rate/duration/unit, normalized `settings`, `processing` provenance and an

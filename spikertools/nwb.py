@@ -5,6 +5,8 @@ namespaces are deliberately not loaded: early SpikeRecorder writers cache core
 2.9 while already writing the standard 2.10 EventsTable layout.
 """
 
+import json
+
 import numpy as np
 
 from .models import Channel, Channels, Event, Events, Neuron
@@ -43,6 +45,31 @@ def _unique_name(name, used, suffix):
         index += 1
     used.add(candidate)
     return candidate
+
+
+def _display_metadata(value):
+    """Read only bounded optional BYB display hints; never apply display filters."""
+    text = _text(value)
+    if len(text) > 512 or len(text.encode('utf-8')) > 512:
+        return {}
+    try:
+        display = json.loads(text)
+    except (ValueError, RecursionError):
+        return {}
+    if not isinstance(display, dict) or display.get('v') != 1:
+        return {}
+    result = {}
+    prep = display.get('prep')
+    if isinstance(prep, dict) and prep.get('kind') in ('neuron', 'plant', 'heart', 'eye', 'brain', 'muscle', 'custom'):
+        result['signal_role'] = prep['kind']
+    filters = display.get('filters')
+    if isinstance(filters, dict):
+        result['recorded_filters'] = {
+            key: value for key, value in filters.items()
+            if key in ('highPassHz', 'lowPassHz', 'notchHz') and
+            (value is None or (isinstance(value, (float, int)) and not isinstance(value, bool)
+                               and np.isfinite(value) and 0 < value <= 999999))}
+    return result
 
 
 def _timing(group, samples):
@@ -111,13 +138,14 @@ def _events(file, start):
                 label = annotation or meanings.get(code) or (str(code) if code is not None else table.name.rsplit('/', 1)[-1])
                 name = _unique_name(label, names, table.name.rsplit('/', 1)[-1] + ':' + str(code))
                 event = Event(name)
-                event.metadata = {'table': table.name, 'event_type': code, 'label': label}
+                event.metadata = {'table': table.name, 'event_type': code,
+                                  'annotation': annotation, 'label': label}
                 event.occurrences = []
                 grouped[key] = event
                 events.append(event)
             event = grouped[key]
             event.timestamps.append(float(times[i] - start))
-            occurrence = {'timestamp': float(times[i])}
+            occurrence = {'timestamp': float(times[i]), 'row_index': int(i)}
             for column, values in columns.items():
                 value = values[i].item()
                 occurrence[column] = value
@@ -219,12 +247,17 @@ def read_nwb(path, series_name=None):
             for field in ('location', 'group_name'):
                 if field in electrodes.colnames:
                     channel.metadata[field] = _text(electrodes[field][row])
+            if 'byb_display_v1' in electrodes.colnames:
+                channel.metadata.update(_display_metadata(electrodes['byb_display_v1'][row]))
             channels.append(channel)
         metadata = {key: getattr(nwb, key) for key in
                     ('identifier', 'session_description', 'session_start_time', 'timestamps_reference_time')}
         metadata.update(nwb_version=_text(file.attrs['nwb_version']), series_name=series.name,
-                        description=series.description, comments=series.comments)
+                        description=series.description, comments=series.comments,
+                        session_id=nwb.session_id,
+                        subject_id=nwb.subject.subject_id if nwb.subject is not None else None)
         return dict(format='nwb', sample_rate=rate, data=data, starting_time=start,
+                    session_id=metadata['session_id'], subject_id=metadata['subject_id'],
                     unit='volts', channels=channels, events=_events(file, start),
                     neurons=_neurons(nwb, start, rows.tolist()), metadata=metadata,
                     datetime=nwb.session_start_time)

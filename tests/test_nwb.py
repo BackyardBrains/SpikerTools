@@ -16,19 +16,27 @@ from hdmf.common import MeaningsTable
 from pynwb import NWBFile, NWBHDF5IO
 from pynwb.ecephys import ElectricalSeries
 from pynwb.event import EventsTable
+from pynwb.file import Subject
 from scipy.io import wavfile
 from scipy.signal import welch
 
 from spikertools import Session
 
 
-def write_recording(path, *, timing='rate', names=('Left', 'Right'), series_names=('ElectricalSeries1',), mono=False):
+def write_recording(path, *, timing='rate', names=('Left', 'Right'), series_names=('ElectricalSeries1',), mono=False,
+                    subject_id=None, session_id=None, display=None):
     nwb = NWBFile('Synthetic experiment', 'test-identifier', datetime(2026, 1, 2, tzinfo=timezone.utc))
+    if subject_id is not None:
+        nwb.subject = Subject(subject_id=subject_id)
+    if session_id is not None:
+        nwb.session_id = session_id
     device = nwb.create_device(name='Synthetic device')
     group = nwb.create_electrode_group(name='electrodes', description='Synthetic electrodes', location='test', device=device)
     nwb.add_electrode_column('label', 'Channel name')
     for row, label in enumerate(names):
         nwb.add_electrode(id=100 + row, location='test', group=group, label=label)
+    if display is not None:
+        nwb.add_electrode_column('byb_display_v1', 'Optional BYB display metadata', data=display)
     rate, start, count = 1024., 5., 8192
     raw = np.round(1000 * np.sin(2 * np.pi * 64 * np.arange(count) / rate)).astype(np.int16)
     data = raw if mono else np.column_stack([raw, -raw])

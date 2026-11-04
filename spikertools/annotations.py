@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .experiment import AnalysisError, _number, _text
+from .experiment import AnalysisError, _event_bindings, _number, _text
 
 MAX_FILE_BYTES = 100 * 1024 * 1024
 MAX_ADDED_BYTES = 8 * 1024 * 1024
@@ -160,6 +160,16 @@ def _sha_file(path):
     return result.hexdigest()
 
 
+def _source_stat(path):
+    try:
+        result = path.lstat()
+    except OSError:
+        _error('invalid_source', 'The source file is unavailable.')
+    if not stat.S_ISREG(result.st_mode) or result.st_size > MAX_FILE_BYTES:
+        _error('bounds', 'Source must be a regular NWB file of at most 100 MiB.')
+    return result
+
+
 def _preflight(file, changed_paths):
     """Reject hidden IO, aliasing and unsupported references before making a copy."""
     import h5py
@@ -184,21 +194,33 @@ def _preflight(file, changed_paths):
         for key in group:
             link = group.get(key, getlink=True)
             if isinstance(link, h5py.SoftLink):
-                # Both the native writer and PyNWB use this standard metadata
-                # link. Resolve only its hard-linked canonical target; never
-                # follow arbitrary paths, link chains, cycles or external IO.
-                if (key != 'device' or not re.fullmatch(r'/general/extracellular_ephys/[^/]+', group.name)
-                        or _decode(group.attrs.get('neurodata_type', '')) != 'ElectrodeGroup'
-                        or not re.fullmatch(r'/general/devices/[^/]+', link.path)):
-                    _error('unsupported_layout', 'Unsupported internal HDF5 soft link.')
+                # NWB Device links and native MeaningsTable target links are
+                # metadata, not extra datasets. Resolve only exact canonical
+                # hard-linked targets, never link chains or external IO.
+                device = (key == 'device' and re.fullmatch(r'/general/extracellular_ephys/[^/]+', group.name)
+                          and _decode(group.attrs.get('neurodata_type', '')) == 'ElectrodeGroup'
+                          and re.fullmatch(r'/general/devices/[^/]+', link.path))
+                meanings = re.fullmatch(r'(/events/[A-Za-z0-9_-]{1,64})/meanings_tables/(event_type|source)_meanings', group.name)
+                column = (meanings is not None and key == 'target'
+                          and _decode(group.attrs.get('neurodata_type', '')) == 'MeaningsTable'
+                          and link.path == meanings[1] + '/' + meanings[2])
+                if not device and not column:
+                    _error('unsupported_layout', 'Unsupported internal HDF5 soft link.', path=group.name + '/' + key)
                 target = file
                 for component in link.path.split('/')[1:]:
-                    if component in ('.', '..') or not isinstance(target.get(component, getlink=True), h5py.HardLink):
-                        _error('unsupported_layout', 'Device links require a direct internal hard-linked target.')
+                    if (not isinstance(target, h5py.Group) or component in ('.', '..')
+                            or not isinstance(target.get(component, getlink=True), h5py.HardLink)):
+                        _error('unsupported_layout', 'Metadata links require a direct internal hard-linked target.', path=group.name + '/' + key)
                     target = target[component]
-                if (not isinstance(target, h5py.Group) or
-                        _decode(target.attrs.get('neurodata_type', '')) != 'Device'):
-                    _error('unsupported_layout', 'Device link does not reference a Device.')
+                if device:
+                    if (not isinstance(target, h5py.Group) or
+                            _decode(target.attrs.get('neurodata_type', '')) != 'Device'):
+                        _error('unsupported_layout', 'Device link does not reference a Device.')
+                elif (not isinstance(target, h5py.Dataset) or target.ndim != 1 or target.dtype.kind not in 'iu'
+                      or _decode(target.attrs.get('neurodata_type', '')) != 'VectorData'
+                      or _decode(file[meanings[1]].attrs.get('neurodata_type', '')) != 'EventsTable'
+                      or target.name in changed_paths):
+                    _error('unsupported_layout', 'Meanings target must reference its unchanged numeric event column.', path=group.name + '/' + key)
                 continue
             if not isinstance(link, h5py.HardLink):
                 _error('unsupported_layout', 'External HDF5 links are not supported.')
@@ -347,10 +369,16 @@ def _event_requests(file, requests):
         if base in file:
             meanings = file[base]
             values = meanings['value'][:]
+            if ('id' not in meanings or meanings['id'].shape != values.shape or meanings['id'].dtype.kind not in 'iu'
+                    or meanings['meaning'].shape != values.shape):
+                _error('unsupported_layout', 'Meanings require aligned id, value and meaning columns.')
             if len(set(values.tolist())) != len(values):
                 _error('unsupported_layout', 'Duplicate meanings codes.')
             if code not in values:
-                if set(meanings) - {'id', 'value', 'meaning', 'shortcut'}:
+                ids = meanings['id'][:]
+                if len(set(ids.tolist())) != len(ids) or (len(ids) and int(max(ids)) >= np.iinfo(np.int64).max):
+                    _error('unsupported_layout', 'Meanings IDs cannot be extended safely.')
+                if set(meanings) - {'id', 'value', 'meaning', 'shortcut', 'target'}:
                     _error('unsupported_layout', 'Unknown meanings columns cannot be extended safely.')
                 paths.update(base + '/' + k for k in ('id', 'value', 'meaning', 'shortcut') if k in meanings)
             else:
@@ -359,6 +387,75 @@ def _event_requests(file, requests):
     if len(set(existing) | seen) > 64:
         _error('bounds', 'Annotated files may contain at most 64 event definitions.')
     return changes, paths
+
+
+def resolve_event_names(source_path, settings):
+    """Translate explicitly versioned keyboard names into per-file local edits.
+
+    Missing keys get the lowest unused positive code in the sole event table (or
+    a new /events/markers table). Defined and observed codes, including deleted
+    occurrences, are reserved. No source is written and no trial is fabricated.
+    """
+    import h5py
+    from .nwb import _event_definitions, _metadata_limits, _vector
+    if (not isinstance(settings, dict) or set(settings) != {'event_identity', 'event_names'}
+            or settings.get('event_identity') != 'keyboard_shortcut_v1'):
+        _error('invalid_event_name', 'Use explicit keyboard_shortcut_v1 event-name settings.')
+    requests = settings['event_names']
+    if not isinstance(requests, list) or not 1 <= len(requests) <= 64:
+        _error('bounds', 'Name between 1 and 64 keyboard shortcuts.')
+    wanted = set()
+    for request in requests:
+        if not isinstance(request, dict) or set(request) != {'shortcut', 'name'}:
+            _error('invalid_event_name', 'Keyboard names require shortcut and name, without local event codes.')
+        shortcut = request['shortcut']
+        if (not isinstance(shortcut, str) or len(shortcut) != 1 or ord(shortcut) < 32 or ord(shortcut) == 127):
+            _error('invalid_event_binding', 'Choose an explicit single-character keyboard shortcut.')
+        if shortcut in wanted:
+            _error('ambiguous_event_binding', 'A keyboard shortcut was requested more than once.')
+        wanted.add(shortcut)
+    source_path = Path(source_path)
+    _source_stat(source_path)
+    with h5py.File(source_path, 'r') as source:
+        _preflight(source, set())
+        try:
+            _metadata_limits(source, 100_000, 10_000_000, 128, 256)
+        except ValueError as error:
+            _error('unsupported_layout', str(error))
+        definitions = _event_definitions(source, 64)
+        _, bindings = _event_bindings(definitions)
+        tables = list(source.get('events', {}))
+        new_table = None
+        if wanted - set(bindings):
+            if len(tables) > 1:
+                _error('ambiguous_event_table', 'Choose a recording with one event table before adding a missing shortcut.')
+            new_table = '/events/' + tables[0] if tables else '/events/markers'
+        reserved = {}
+        for definition in definitions:
+            reserved.setdefault(definition['table'], set()).add(definition['code'])
+        for table in source.get('events', {}).values():
+            values = _vector(table, 'event_type') if 'event_type' in table else []
+            used = reserved.setdefault(table.name, set())
+            for value in values:
+                if not np.isfinite(value) or int(value) != value:
+                    _error('invalid_event_binding', 'Observed event codes must be finite integers.')
+                used.add(int(value))
+        changes = []
+        for request in requests:
+            shortcut = request['shortcut']
+            if shortcut in bindings:
+                table, code = bindings[shortcut]
+            else:
+                table = new_table
+                used = reserved.setdefault(table, set())
+                code = 1
+                while code in used and code <= 2_147_483_647:
+                    code += 1
+                if code > 2_147_483_647:
+                    _error('bounds', 'No unused positive event code is available.')
+                used.add(code)
+            changes.append(dict(table=table, code=code, shortcut=shortcut, name=request['name']))
+        return _event_requests(source, changes)[0]
 
 
 def _apply_event_names(file, changes):
@@ -434,6 +531,8 @@ def _unit_plan(file):
             index = table[name + '_index']
             if 'target' not in index.attrs or file[index.attrs['target']].id != table[name].id:
                 _error('unsupported_layout', 'Unit indexes must reference their corresponding data column.')
+    if any(name in table and table[name].dtype.kind != 'f' for name in ('threshold_low', 'threshold_high')):
+        _error('unsupported_layout', 'Native threshold columns cannot represent missing configuration.')
     return {'/units/' + k for k in table}
 
 
@@ -542,32 +641,24 @@ def _append_unit(file, detection, info, operation_id, source_sha256, root_source
     return str(identity)
 
 
-def write_annotated_copy(source_path, output_path, *, detection=None, channel_index=None,
-                         event_names=None, expected_source_sha256=None, operation_id):
-    """Create a private new file; preserve every unmodified source object.
-
-    Unknown references into changed datasets, unsupported unit columns and HDF5
-    links fail explicitly. The application owns permission checks and publication.
-    """
+def _annotation_plan(source_path, *, detection, channel_index, event_names,
+                     expected_source_sha256, operation_id):
     import h5py
-    from .nwb import read_nwb
-    source_path, output_path = Path(source_path), Path(output_path)
+    from .nwb import _metadata_limits, read_nwb
+    source_path = Path(source_path)
     if not isinstance(operation_id, str) or not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', operation_id):
         _error('invalid_input', 'operation_id must be a bounded identifier.')
-    try:
-        source_stat = source_path.lstat()
-    except OSError:
-        _error('invalid_source', 'The source file is unavailable.')
-    if not stat.S_ISREG(source_stat.st_mode) or source_stat.st_size > MAX_FILE_BYTES:
-        _error('bounds', 'Source must be a regular NWB file of at most 100 MiB.')
-    if output_path.exists() or output_path.is_symlink():
-        _error('output_exists', 'The output path already exists; never overwrite an annotated copy.')
+    source_stat = _source_stat(source_path)
     source_hash = _sha_file(source_path)
     if expected_source_sha256 is not None and source_hash != expected_source_sha256:
         _error('source_changed', 'The source file changed since preview.')
     with h5py.File(source_path, 'r') as source:
         # First reject linked/aliased layouts before traversing event requests.
         _preflight(source, set())
+        try:
+            _metadata_limits(source, 100_000, 10_000_000, 128, 256)
+        except ValueError as error:
+            _error('unsupported_layout', str(error))
         try:
             operations = json.loads(_decode(source.attrs.get(OPERATIONS_ATTR, '[]')))
         except ValueError:
@@ -583,11 +674,66 @@ def write_annotated_copy(source_path, output_path, *, detection=None, channel_in
         if detection is None and not changes:
             _error('invalid_input', 'Choose spike detection or at least one event name.')
         info = None
+        new_unit_id = None
         if detection is not None:
+            if not isinstance(detection, dict):
+                _error('invalid_detection', 'Expected a verified detector result.')
             if detection.get('spike_count', 0):
                 paths |= _unit_plan(source)
+                new_unit_id = str(int(max(source['units/id'][:], default=-1)) + 1) if 'units' in source else '0'
             info = _validate_detection(source, detection, channel_index)
         _preflight(source, paths)
+        for path in paths:
+            if not isinstance(source[path], h5py.Dataset) or source[path].compression not in (None, 'gzip', 'lzf'):
+                _error('unsupported_layout', 'Unsupported annotation column or compression.', path=path)
+    # Match the bounded reader used after Save while the file is still read-only.
+    # A malformed source must not appear ready for an operation that cannot reopen.
+    try:
+        read_nwb(source_path, load_data=False, max_event_rows=100_000, max_spike_times=10_000_000, max_units=128)
+    except (KeyError, TypeError, ValueError) as error:
+        _error('unsupported_layout', 'The recording cannot be reopened by the supported NWB reader.', reason=type(error).__name__)
+    if _sha_file(source_path) != source_hash:
+        _error('source_changed', 'The source changed while its annotations were checked.')
+    return dict(source_bytes=source_stat.st_size, source_sha256=source_hash,
+                root_source_sha256=root_source_hash, event_names=changes,
+                operations=operations, detection_info=info, new_unit_id=new_unit_id)
+
+
+def validate_annotated_copy(source_path, *, detection=None, channel_index=None,
+                            event_names=None, expected_source_sha256=None, operation_id):
+    """Check the exact requested annotation without creating or changing a file.
+
+    The same bounded plan runs again during Save. The returned capability is not
+    an authorization or a promise of free disk space: output creation, source
+    races, and the final 100 MiB total / 8 MiB growth limits are checked at Save.
+    Deterministic source-layout and request failures raise ``AnalysisError``.
+    """
+    plan = _annotation_plan(source_path, detection=detection, channel_index=channel_index,
+                            event_names=event_names, expected_source_sha256=expected_source_sha256,
+                            operation_id=operation_id)
+    return dict(schema_version='spikertools.annotation-capability.v1', operation_id=operation_id,
+                source_sha256=plan['source_sha256'], root_source_sha256=plan['root_source_sha256'],
+                source_bytes=plan['source_bytes'], max_output_bytes=min(MAX_FILE_BYTES, plan['source_bytes'] + MAX_ADDED_BYTES),
+                new_unit_id=plan['new_unit_id'], event_names=plan['event_names'])
+
+
+def write_annotated_copy(source_path, output_path, *, detection=None, channel_index=None,
+                         event_names=None, expected_source_sha256=None, operation_id):
+    """Create a private new file; preserve every unmodified source object.
+
+    Unknown references into changed datasets, unsupported unit columns and HDF5
+    links fail explicitly. The application owns permission checks and publication.
+    """
+    import h5py
+    from .nwb import read_nwb
+    source_path, output_path = Path(source_path), Path(output_path)
+    if output_path.exists() or output_path.is_symlink():
+        _error('output_exists', 'The output path already exists; never overwrite an annotated copy.')
+    plan = _annotation_plan(source_path, detection=detection, channel_index=channel_index,
+                            event_names=event_names, expected_source_sha256=expected_source_sha256,
+                            operation_id=operation_id)
+    source_hash, root_source_hash = plan['source_sha256'], plan['root_source_sha256']
+    changes, operations, info = plan['event_names'], plan['operations'], plan['detection_info']
     created = False
     try:
         # O_EXCL plus no-follow checks protect output races. Only our own partial
@@ -613,7 +759,7 @@ def write_annotated_copy(source_path, output_path, *, detection=None, channel_in
                     'noise_sigma', 'threshold_positive', 'threshold_negative', 'spike_count', 'data_sha256', 'provenance')}
             target.attrs['spikertools_last_annotation_v1'] = json.dumps(summary, allow_nan=False, sort_keys=True)
         size = output_path.stat().st_size
-        if size > MAX_FILE_BYTES or size - source_stat.st_size > MAX_ADDED_BYTES:
+        if size > MAX_FILE_BYTES or size - plan['source_bytes'] > MAX_ADDED_BYTES:
             _error('bounds', 'Annotated copy exceeds the 100 MiB total or 8 MiB addition limit.')
         # Reopen through the supported reader, with bounded annotations and no
         # signal materialization. Native contract readback is tested separately.
@@ -623,7 +769,7 @@ def write_annotated_copy(source_path, output_path, *, detection=None, channel_in
         return dict(schema_version='spikertools.annotated-copy.v1', operation_id=operation_id,
                     source_sha256=source_hash, sha256=_sha_file(output_path), bytes=size,
                     root_source_sha256=root_source_hash,
-                    source_bytes=source_stat.st_size, added_bytes=size - source_stat.st_size,
+                    source_bytes=plan['source_bytes'], added_bytes=size - plan['source_bytes'],
                     new_unit_id=new_unit, event_names=changes)
     except FileExistsError:
         _error('output_exists', 'The output path already exists.')

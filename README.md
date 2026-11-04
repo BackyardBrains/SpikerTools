@@ -296,6 +296,26 @@ edited without updating its row identities, analysis fails and asks you to reloa
 the source. In-memory legacy events use their names and original list positions;
 keep those lists unchanged while reusing saved selections.
 
+For files recorded with common keyboard bindings, explicitly opt in to
+`session_catalogue(session, event_identity="keyboard_shortcut_v1")`. Its events
+use compact JSON `["shortcut", key]`, or `["shortcut", key, note]` for a nonempty
+note. Empty and absent notes agree; notes never join unannotated trials. The
+same key can therefore identify baseline even if one file stores local code1
+and another stores local code2. Matching is case-sensitive and requires an
+explicit, unique stored shortcut; it never guesses from names, codes or order.
+Duplicate or malformed bindings raise an error. An unbound event keeps its
+legacy key and has `identity_status="unbound"`; a group-analysis service must
+require a binding before treating it as a shared condition.
+
+The opt-in catalogue advertises `event_identity="keyboard_shortcut_v1"`. Each
+event includes `identity_status`, `shortcut`, and `source_events` containing the
+original `table`, `code`, `annotation` and `legacy_key`; trial IDs stay unchanged.
+Save this mapping with analysis provenance. `analyze_session` accepts these event
+objects but returns its existing numerical/trial schema. The default catalogue
+still uses `table_code_annotation_v1`. Do not silently reinterpret old selections
+or exclusions under new keys; preserve historical results and ask for a fresh
+selection review when changing identity versions.
+
 For PETH, set `method="peth"`, `baseline=None` and `bin_size` in seconds. Select
 the saved unit with `neuron` (position or per-session mapping); only a single
 compatible unit is automatically selected. Electrode/channel linkage is required.
@@ -459,12 +479,44 @@ recorder reads these definitions; its UI may merge equal names across codes.
 Copies retain `annotation_root_source_sha256` across generations so applications
 can reject original/copy duplicate subjects without inventing subject IDs.
 
+Use the read-only resolver when naming the same keyboard events across files:
+
+```python
+from spikertools.annotations import resolve_event_names, validate_annotated_copy
+
+changes = resolve_event_names("recording.nwb", {
+    "event_identity": "keyboard_shortcut_v1",
+    "event_names": [{"shortcut": "1", "name": "Baseline"},
+                    {"shortcut": "9", "name": "Blow"}],
+})
+capability = validate_annotated_copy("recording.nwb", event_names=changes,
+    expected_source_sha256=source_sha256, operation_id="reviewed-names-1")
+# Present the resolved changes for review before calling write_annotated_copy
+# with the same arguments and a new output path.
+```
+
+The resolver returns ordinary local writer operations. A missing shortcut gets
+the lowest unused positive code, reserving both defined and observed codes,
+including deleted occurrences. It adds only a definition with zero trials. A
+missing event table can become `/events/markers`; multiple candidate tables are
+an explicit ambiguity. Legacy code-based payloads are rejected by this resolver.
+
+`validate_annotated_copy` accepts the writer's exact arguments except output path
+and uses its same bounded source/request plan, including detection-specific
+requirements. Its `spikertools.annotation-capability.v1` receipt includes source
+and root hashes, source bytes, maximum output bytes, proposed unit ID and resolved
+event names. It creates no file. Save repeats validation and still checks output
+creation, free-space failures, source races and final byte limits. A capability
+is neither access permission nor a guarantee against those operational failures.
+
 Detection is bounded to 20 million selected samples, 1 million excursions and
 100,000 retained spikes. Exact full-channel median/MAD requires linear memory.
 Copies are limited to 100 MiB total, 8 MiB added, 64 event definitions and 128
 units. Unsupported custom unit columns, region references, aliases into changed
 data and unsafe links fail rather than silently losing content. Standard internal
-electrode-group device links are preserved. No external/virtual dataset access
+electrode-group device links and native event/source MeaningsTable target links
+are preserved. Targets must be the exact canonical unchanged columns with
+hard-linked path components and correct NWB types. No external/virtual dataset access
 or arbitrary HDF5 link traversal is permitted. Operation IDs use 1–128 ASCII
 letters, digits, underscores or hyphens; repeated IDs and existing outputs fail.
 

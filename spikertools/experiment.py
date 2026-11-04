@@ -550,9 +550,11 @@ def session_catalogue(session):
         _events(events, [e['key'] for e in events], {})
     return dict(session_id=getattr(session, 'session_id', None),
                 subject_id=getattr(session, 'subject_id', None),
+                annotation_root_source_sha256=getattr(session, 'annotation_root_source_sha256', None),
                 data_loaded=getattr(session, 'data_loaded', True),
                 sample_count=getattr(session, 'sample_count', None),
                 duration_seconds=getattr(session, 'duration_seconds', None), events=events,
+                event_definitions=copy.deepcopy(getattr(session, 'event_definitions', [])),
                 channels=[dict(id=str(c.number), name=c.name, sample_rate=float(c.sample_rate),
                                unit=getattr(c, 'unit', session.unit),
                                calibration={key: getattr(c, 'metadata', {}).get(key)

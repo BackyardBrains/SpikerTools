@@ -407,7 +407,66 @@ window, 200 million sample-work units per session, 10,000 output points per trac
 and 10 million combined event-trace values. These are library ceilings; a web
 service should additionally bound file bytes, process memory, CPU and job time.
 Authenticate source access separately; this library does not fetch remote URLs,
-grant sharing rights, write NWB files, or execute user-provided scripts.
+grant sharing rights or execute user-provided scripts.
+
+## Explicit spike detection and annotated copies
+
+```python
+from spikertools.annotations import detect_spikes, write_annotated_copy
+
+session = Session("recording.nwb")
+preview = detect_spikes(session.channels[0].data, sample_rate=session.sample_rate,
+                        channel_id="0")
+# Inspect preview['preview'], thresholds and spike_count before explicitly saving.
+receipt = write_annotated_copy("recording.nwb", "annotated.nwb", detection=preview,
+    channel_index=0, operation_id="reviewed-detection-1", event_names=[
+        {"table": "/events/markers", "code": 1, "name": "Touch"}])
+```
+
+The default detector uses positive excursions above the median baseline plus
+4 times robust noise sigma: median absolute deviation divided by
+0.6744897501960817. Settings support `polarity` (`positive`, `negative`, `both`),
+`sigma_multiplier` (1–20) and `refractory_ms` (0.1–100, default 1). Each continuous
+threshold excursion contributes its strongest sample. Refractory suppression
+keeps strongest absolute excursions first, breaking ties by earliest sample.
+There is no filtering or automatic clustering; “Detected spikes” does not mean
+an isolated neuron. Zero/invalid noise and nonfinite samples fail explicitly.
+Saturation is not inferred from calibrated voltages. The preview contains at most
+2,000 consecutive real samples; the complete train stays available separately
+for saving. Do not send full trains or raw recordings as preview JSON.
+
+The writer exclusively creates a new file and checks the selected channel's data
+hash, calibration and clock. Services should pass `expected_source_sha256` from
+their preview and independently enforce access, quota and durable publication.
+Raw arrays, existing units, events, subject identity and unknown fields are
+preserved. New standard NWB units contain absolute spike times, electrode row
+references and detector provenance. Zero detections append no empty unit.
+SpikeRecorder currently restores its own ADC threshold bands and re-detects them;
+it does not display these arbitrary saved units as editable spike trains.
+The saved trains work in My files PETH and Python. No physical voltage threshold
+is misrepresented as native ADC configuration.
+
+Event names and optional shortcuts use native `event_type_meanings` definitions.
+Existing shortcuts are preserved; conflicting requests fail. New definitions can
+include a `shortcut`, including in an explicitly selected absent events table.
+They add no occurrence or timestamp. The separate `event_definitions` catalogue
+contains table, code, name, shortcut and occurrence count, including zero counts.
+Its `has_definition` flag distinguishes a meanings row from an observed numeric
+code that has not been named yet. Historical cross-table shortcut reuse survives
+renaming; only a new conflicting assignment is rejected.
+Appearance and free-text occurrence annotations remain unchanged. The native
+recorder reads these definitions; its UI may merge equal names across codes.
+Copies retain `annotation_root_source_sha256` across generations so applications
+can reject original/copy duplicate subjects without inventing subject IDs.
+
+Detection is bounded to 20 million selected samples, 1 million excursions and
+100,000 retained spikes. Exact full-channel median/MAD requires linear memory.
+Copies are limited to 100 MiB total, 8 MiB added, 64 event definitions and 128
+units. Unsupported custom unit columns, region references, aliases into changed
+data and unsafe links fail rather than silently losing content. Standard internal
+electrode-group device links are preserved. No external/virtual dataset access
+or arbitrary HDF5 link traversal is permitted. Operation IDs use 1–128 ASCII
+letters, digits, underscores or hyphens; repeated IDs and existing outputs fail.
 
 ## For Teachers
 

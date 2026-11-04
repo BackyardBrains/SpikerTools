@@ -6,6 +6,7 @@ namespaces are deliberately not loaded: early SpikeRecorder writers cache core
 """
 
 import json
+import re
 
 import numpy as np
 
@@ -170,6 +171,36 @@ def _events(file, start):
     return Events(events)
 
 
+def _event_definitions(file, limit=None):
+    """Definitions are separate from occurrences, including unused named codes."""
+    definitions = []
+    for table in file.get('events', {}).values():
+        path = 'meanings_tables/event_type_meanings'
+        if limit is not None and path in table and table[path]['value'].size > limit:
+            raise ValueError('Event definitions exceed the supported limit before materialization.')
+        meanings = _meanings(table, 'event_type')
+        shortcuts = {}
+        if path in table and 'shortcut' in table[path]:
+            codes = _vector(table[path], 'value')
+            shortcuts = dict(zip(codes.tolist(), map(_text, _vector(table[path], 'shortcut', len(codes)))))
+        counts = {}
+        if 'event_type' in table:
+            codes = _vector(table, 'event_type')
+            deleted = _vector(table, 'deleted', len(codes), 0)
+            for code in codes[deleted == 0]:
+                value = code.item()
+                counts[value] = counts.get(value, 0) + 1
+        for code in dict.fromkeys([*meanings, *counts]):
+            if not isinstance(code, (int, float)) or not np.isfinite(code) or int(code) != code:
+                raise ValueError('Event definitions require finite integer event codes.')
+            definitions.append(dict(table=table.name, code=int(code), name=meanings.get(code, ''),
+                                    shortcut=shortcuts.get(code, ''), occurrences=counts.get(code, 0),
+                                    has_definition=code in meanings))
+            if limit is not None and len(definitions) > limit:
+                raise ValueError('Event definitions exceed the supported limit.')
+    return definitions
+
+
 def _neurons(nwb, start, channel_rows):
     units = nwb.units
     if units is None:
@@ -215,15 +246,22 @@ def _limit(value, default, name):
     return int(value)
 
 
-def _metadata_limits(file, max_event_rows, max_spike_times, max_units):
+def _metadata_limits(file, max_event_rows, max_spike_times, max_units, max_event_definitions=None):
     """Enforce row counts from shapes before PyNWB/model materialization."""
-    count = 0
+    count, definitions = 0, 0
     for table in file.get('events', {}).values():
         if 'timestamp' not in table or len(table['timestamp'].shape) != 1:
             raise ValueError('NWB event timestamps must be a one-dimensional column.')
         count += table['timestamp'].shape[0]
         if max_event_rows is not None and count > max_event_rows:
             raise ValueError('NWB event rows exceed max_event_rows before materialization.')
+        for meanings in table.get('meanings_tables', {}).values():
+            for column in ('value', 'meaning'):
+                if column not in meanings or len(meanings[column].shape) != 1:
+                    raise ValueError('NWB meanings require one-dimensional value and meaning columns.')
+            definitions += meanings['value'].shape[0]
+            if max_event_definitions is not None and definitions > max_event_definitions:
+                raise ValueError('NWB definitions exceed metadata limit before materialization.')
     if 'units' in file:
         table = file['units']
         for name, limit in [('id', max_units), ('spike_times', max_spike_times)]:
@@ -259,7 +297,7 @@ def read_nwb(path, series_name=None, *, load_data=True, max_event_rows=None,
                           'Install with: pip install "spikertools[nwb]"') from error
 
     with h5py.File(path, 'r') as file, NWBHDF5IO(file=file, mode='r', load_namespaces=False) as io:
-        _metadata_limits(file, max_event_rows, max_spike_times, max_units)
+        _metadata_limits(file, max_event_rows, max_spike_times, max_units, None if load_data else 256)
         nwb = io.read()
         candidates = {name: series for name, series in nwb.acquisition.items()
                       if isinstance(series, ElectricalSeries) and not isinstance(series, SpikeEventSeries)}
@@ -319,9 +357,13 @@ def read_nwb(path, series_name=None, *, load_data=True, max_event_rows=None,
                         description=series.description, comments=series.comments,
                         session_id=nwb.session_id,
                         subject_id=nwb.subject.subject_id if nwb.subject is not None else None)
+        lineage = _text(file.attrs.get('spikertools_root_source_sha256_v1', ''))
+        lineage = lineage if re.fullmatch(r'[0-9a-f]{64}', lineage) else None
         return dict(format='nwb', sample_rate=rate, data=data, data_loaded=load_data, starting_time=start,
                     sample_count=samples, duration_seconds=samples / rate,
                     session_id=metadata['session_id'], subject_id=metadata['subject_id'],
+                    annotation_root_source_sha256=lineage,
                     unit='volts', channels=channels, events=_events(file, start),
+                    event_definitions=_event_definitions(file, None if load_data else 64),
                     neurons=_neurons(nwb, start, rows.tolist()), metadata=metadata,
                     datetime=nwb.session_start_time)
